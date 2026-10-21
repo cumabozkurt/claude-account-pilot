@@ -3,7 +3,7 @@
 ## [0.2.0] - 2026-10-21
 
 - Kota pencereleri, etkin hesap ve hareket listesi diske yazılır ve yeniden açılınca geri gelir. Dosyada sır yoktur.
-- Pages iş akışı ilk çalıştığında GitHub Pages'i açar.
+- Uygulama simgesi 1024×1024. macOS kurulum derlemesi 256×256 simgeyi reddetmişti; v0.1.0'ın macOS işi bu yüzden düştü.
 
 ## [0.1.0] - 2026-10-21
 

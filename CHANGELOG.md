@@ -3,7 +3,7 @@
 ## [0.2.0] - 2026-10-21
 
 - Quota windows, the active account, and the activity list are saved on disk and restored after a restart. The file still has no secrets.
-- The Pages workflow turns GitHub Pages on the first time it runs.
+- The app icon is 1024×1024 so the macOS installer build accepts it. v0.1.0's macOS job failed on a 256×256 icon.
 
 ## [0.1.0] - 2026-10-21
 
