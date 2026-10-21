@@ -58,8 +58,8 @@ This app is the small control surface for that: accounts, providers, and model r
 | Auto switch | The active account is kept until a quota window reaches **98%** (editable, 50–99). The next enabled account under the line is used. A short per-minute 429 does not mark the quota full. |
 | Always on | The proxy polls about once a minute, and it also reads rate-limit headers on every response. |
 | Model routes | First enabled glob wins. The built-in rules send `*haiku*` to OpenCode Go `deepseek-v4-flash` or to DeepSeek `deepseek-chat`. Both ship **off**. |
-| Codex | If `~/.codex/auth.json` exists, the app can reuse that login and speak the Responses API. The token is read in place, not copied. |
-| Cursor and Antigravity | Detected when their config directories exist. They have no stable public messages API, so traffic is **not** rewritten through them. |
+| Codex, OpenRouter, Gemini, Antigravity | Codex reuses `~/.codex/auth.json` and refreshes it when the access token is expired. OpenRouter and Gemini speak OpenAI chat. Antigravity uses a Google login and the daily Cloud Code host only. Each route can name a fallback. |
+| Cursor | Detected only. There is no stable messages API, so a Cursor hop is skipped. Give the route a fallback. |
 | Numbers | Percent when a provider publishes one, plus input/output tokens, cache tokens, and an **estimated** USD cost. |
 | Tray | Menu-bar / system tray, percent in the macOS menu bar, optional always-on-top widget on every platform. |
 | Claude settings | One button writes `ANTHROPIC_BASE_URL` into `~/.claude/settings.json` (the file the CLI and the VS Code extension read) and can restore the backup. A second action writes the chosen subscription into `~/.claude/.credentials.json` and, on macOS, the Claude Code keychain item, for clients that ignore the proxy. |
@@ -165,7 +165,7 @@ Tauri 2 is the other stack that shows up constantly in the research (CC Switch, 
 - Claude Desktop's chat app stores its own encrypted session. Switching credentials updates Claude Code and the VS Code extension. It does not sign the Desktop chat app into another account.
 - OpenCode Go and DeepSeek do not publish a percent-used quota. You get tokens, estimated cost, and a DeepSeek balance when the API returns one.
 - Codex quota windows appear only if the upstream sends them. The login file is read, not refreshed, by this app.
-- Cursor and Antigravity have no public quota API and no stable local messages API that preserves Claude Code tool calls. They are detected, not routed.
+- Cursor has no stable public messages API that preserves tool calls. It is detected, not routed. Details and the other provider limits are in [docs/LIMITATIONS.md](docs/LIMITATIONS.md). Antigravity routes through Google's daily Cloud Code host. OpenRouter and Gemini are OpenAI-compatible hops, with fallbacks on each route.
 - Prices in the cost column are list-price estimates for display.
 - Builds are unsigned.
 - The menu-bar percent is macOS-only. Linux and Windows use the tray tooltip and the optional floating widget, because a global menu bar is not how those desktops work.

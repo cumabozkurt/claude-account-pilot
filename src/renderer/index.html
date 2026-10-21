@@ -62,6 +62,7 @@
         <p class="hint" data-i18n="oauth.desktopLimit"></p>
         <div class="actions">
           <button type="button" id="oauth-open" class="primary" data-i18n="oauth.open"></button>
+          <button type="button" id="oauth-antigravity" data-i18n="oauth.antigravity"></button>
           <button type="button" id="oauth-restore" data-i18n="oauth.restore"></button>
         </div>
         <form id="oauth-finish" class="form">
@@ -70,6 +71,17 @@
             <input id="oauth-code" autocomplete="off" />
           </label>
           <button type="submit" data-i18n="oauth.finish"></button>
+        </form>
+        <form id="oauth-google" class="form">
+          <label class="field grow">
+            <span data-i18n="oauth.clientId"></span>
+            <input id="ag-client-id" autocomplete="off" />
+          </label>
+          <label class="field grow">
+            <span data-i18n="oauth.clientSecret"></span>
+            <input id="ag-client-secret" type="password" autocomplete="off" />
+          </label>
+          <button type="submit" data-i18n="oauth.saveClient"></button>
         </form>
         <form id="oauth-import" class="form">
           <label class="field grow">
@@ -135,6 +147,14 @@
           <label class="field">
             <span data-i18n="routes.target"></span>
             <input id="route-model" required data-i18n-placeholder="form.modelPh" />
+          </label>
+          <label class="field">
+            <span data-i18n="routes.fallback"></span>
+            <select id="route-fallback"></select>
+          </label>
+          <label class="field">
+            <span data-i18n="routes.fallbackModel"></span>
+            <input id="route-fallback-model" data-i18n-placeholder="form.modelPh" />
           </label>
           <button type="submit" class="primary" data-i18n="routes.add"></button>
         </form>

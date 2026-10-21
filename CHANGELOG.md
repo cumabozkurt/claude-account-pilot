@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.4.0] - 2026-10-21
+
+- Routes can name a fallback provider and model. Cursor is still not called. A route aimed at Cursor uses the fallback instead of failing when one is set.
+- Antigravity (Google login on `127.0.0.1:51121`) is translated to `daily-cloudcode-pa.googleapis.com` generateContent, including tools. The prod Cloud Code host is never used.
+- Codex access tokens are refreshed at `auth.openai.com` when the JWT is expired, and the new tokens are written back to `~/.codex/auth.json`. Requests send the Codex originator headers and omit `max_output_tokens`, which that API rejects.
+- OpenRouter and Gemini are OpenAI-compatible providers. OpenRouter's key endpoint supplies a percent when the key has a credit limit.
+- A provider error (429, 5xx, or a dropped connection) tries the next account or the fallback hop.
+- Request rows (model, tokens, estimated cost, no prompt text) are kept for the dashboard.
+- What still cannot be done is written in `docs/LIMITATIONS.md`.
+
 ## [0.3.0] - 2026-10-21
 
 - Claude Pro/Max subscription login uses the public Claude Code OAuth client: PKCE in the browser, paste the code, store the rotated refresh token in the OS keychain.

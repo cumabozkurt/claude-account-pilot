@@ -36,6 +36,7 @@ export function loadConfig(path: string): AppConfig {
     launchAtLogin: Boolean(raw.launchAtLogin),
     notify: raw.notify !== false,
     syncedAccountId: typeof raw.syncedAccountId === "string" ? raw.syncedAccountId : null,
+    antigravityClientId: typeof raw.antigravityClientId === "string" ? raw.antigravityClientId : "",
     providersEnabled: providers,
     accounts: Array.isArray(raw.accounts)
       ? raw.accounts.filter((account) => account && typeof account === "object" && isProvider(account.provider) && typeof account.id === "string")

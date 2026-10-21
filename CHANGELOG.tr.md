@@ -1,5 +1,15 @@
 # Değişiklik günlüğü
 
+## [0.4.0] - 2026-10-21
+
+- Rotalar bir yedek sağlayıcı ve model alabilir. Cursor hâlâ çağrılmaz. Cursor'a bakan bir rota, yedek varsa hata vermek yerine yedeği kullanır.
+- Antigravity (Google girişi, `127.0.0.1:51121`) araç çağrıları dahil `daily-cloudcode-pa.googleapis.com` generateContent uçuna çevrilir. Üretim Cloud Code ucu hiç kullanılmaz.
+- Codex erişim belirteci JWT'nin süresi dolunca `auth.openai.com` üzerinde yenilenir ve yeni belirteçler `~/.codex/auth.json` dosyasına yazılır. İstekler Codex originator başlıklarını taşır ve bu API'nin reddettiği `max_output_tokens` alanını çıkarır.
+- OpenRouter ve Gemini, OpenAI uyumlu sağlayıcılardır. OpenRouter anahtar ucu, anahtarın kredi sınırı varsa yüzde verir.
+- Sağlayıcı hatası (429, 5xx veya kopan bağlantı) sıradaki hesabı veya yedek adımı dener.
+- İstek satırları (model, belirteç, tahmini maliyet; istem metni yok) pano için saklanır.
+- Hâlâ yapılamayanlar `docs/LIMITATIONS.md` içindedir.
+
 ## [0.3.0] - 2026-10-21
 
 - Claude Pro/Max abonelik girişi, Claude Code'un herkese açık OAuth istemcisini kullanır: tarayıcıda PKCE, kodu yapıştırma, dönen yenileme belirtecinin işletim sistemi anahtarlığında saklanması.

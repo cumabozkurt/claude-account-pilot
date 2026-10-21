@@ -1,6 +1,6 @@
 import { app, BrowserWindow, Menu, Notification, Tray, ipcMain, nativeImage, shell, type NativeImage } from "electron";
 import { execFile } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
@@ -24,6 +24,20 @@ import {
   type PkceLogin,
 } from "../core/oauth-claude.js";
 import { pollClaudeSubscription } from "../core/subscription.js";
+import { applyCodexRefresh, codexNeedsRefresh, codexRefreshRequest, mergeCodexTokens, parseCodexTokens } from "../core/oauth-codex.js";
+import {
+  ANTIGRAVITY,
+  applyGoogleToken,
+  buildAntigravityAuthorizeUrl,
+  createGoogleLogin,
+  googleExchangeRequest,
+  googleNeedsRefresh,
+  googleRefreshRequest,
+  googleTokensDocument,
+  parseGoogleTokens,
+} from "../core/oauth-google.js";
+import { OPENROUTER_KEY_URL, openRouterPercent } from "../core/openrouter.js";
+import { listenForOAuthCode } from "../core/oauth-loopback.js";
 import { discoverInstalls, type Discovery } from "../core/discover.js";
 import { detectLang, translate } from "../core/i18n.js";
 import { emptyLedger, loadLedger, recordUsage, saveLedger } from "../core/ledger.js";
@@ -78,6 +92,15 @@ const runtime: RuntimeSnapshot = {
   percentByAccount: {},
   cooldownUntil: {},
 };
+
+const ANTIGRAVITY_CLIENT_SECRET = "antigravity:client-secret";
+
+function googleClient(): { clientId: string; clientSecret: string } {
+  return {
+    clientId: config.antigravityClientId.trim(),
+    clientSecret: secrets.get(ANTIGRAVITY_CLIENT_SECRET) ?? "",
+  };
+}
 
 function home(): string {
   return app.getPath("home") || homedir();
@@ -184,6 +207,8 @@ function publicState() {
     }),
     notify: config.notify,
     syncedAccountId: config.syncedAccountId,
+    antigravityClientId: config.antigravityClientId,
+    antigravityClientReady: Boolean(config.antigravityClientId && secrets.get(ANTIGRAVITY_CLIENT_SECRET)),
     routes: config.routes,
     discoveries: discoverInstalls(home()),
     activity,
@@ -204,14 +229,57 @@ function publish(): void {
 async function readStoredSecret(account: Account): Promise<string | null> {
   try {
     if (account.secretRef === DISCOVERED_CODEX) {
-      const login = readCodexAuth(JSON.parse(readFileSync(join(home(), ".codex", "auth.json"), "utf8")));
-      return login?.token ?? null;
+      const path = join(home(), ".codex", "auth.json");
+      const raw = JSON.parse(readFileSync(path, "utf8")) as unknown;
+      let tokens = parseCodexTokens(raw);
+      if (tokens && codexNeedsRefresh(tokens)) {
+        const request = codexRefreshRequest(tokens);
+        if (request) {
+          const response = await nodeHttp(request);
+          const refreshed = applyCodexRefresh(tokens, response.status, response.body);
+          if (refreshed.tokens) {
+            tokens = refreshed.tokens;
+            writeFileSync(path, `${JSON.stringify(mergeCodexTokens(raw, tokens), null, 2)}\n`, { mode: 0o600 });
+            pushActivity({ at: new Date().toISOString(), key: "log.refreshed", vars: { label: account.label } });
+          }
+        }
+      }
+      if (tokens?.accountId) account.externalId = tokens.accountId;
+      return tokens?.accessToken ?? null;
     }
     if (account.secretRef === DISCOVERED_CLAUDE) return readCredentialsRaw(home());
   } catch {
     return null;
   }
-  return secrets.get(account.secretRef);
+  const stored = secrets.get(account.secretRef);
+  if (!stored || account.provider !== "antigravity") return stored;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stored) as unknown;
+  } catch {
+    return stored;
+  }
+  const tokens = parseGoogleTokens(parsed);
+  if (!tokens) return stored;
+  if (tokens.refreshToken && googleNeedsRefresh(tokens)) {
+    const request = googleRefreshRequest(tokens, googleClient());
+    if (request) {
+      try {
+        const response = await nodeHttp(request);
+        const refreshed = applyGoogleToken(tokens, response.status, response.body);
+        if (refreshed.tokens) {
+          secrets.set(account.secretRef, googleTokensDocument(refreshed.tokens));
+          account.expiresAt = refreshed.tokens.expiresAt;
+          account.email = refreshed.tokens.email ?? account.email;
+          if (refreshed.tokens.projectId) account.externalId = refreshed.tokens.projectId;
+          return refreshed.tokens.accessToken;
+        }
+      } catch {
+        return tokens.accessToken;
+      }
+    }
+  }
+  return tokens.accessToken;
 }
 
 async function resolveSecret(account: Account): Promise<string | null> {
@@ -347,6 +415,16 @@ async function probeQuotas(): Promise<void> {
             });
             persistRuntime();
           }
+        }
+      } else if (account.provider === "openrouter") {
+        const response = await fetch(OPENROUTER_KEY_URL, {
+          headers: { authorization: `Bearer ${stored}` },
+          signal: AbortSignal.timeout(8000),
+        });
+        if (response.ok) {
+          const parsed = openRouterPercent(await response.json());
+          const windows = parsed.percent == null ? [] : [{ label: "balance" as const, percent: parsed.percent, name: "credits" }];
+          rememberQuota(account.id, windows, parsed.percent, "provider", parsed.note);
         }
       }
     } catch {
@@ -597,14 +675,27 @@ function registerIpc(): void {
     persist();
     publish();
   });
-  ipcMain.handle("pilot:addRoute", (_event, input: { match?: string; provider?: string; targetModel?: string }) => {
-    const match = (input.match ?? "").trim();
-    const targetModel = (input.targetModel ?? "").trim();
-    if (!isProvider(input.provider) || !match || !targetModel) return;
-    config.routes.push({ id: randomUUID(), enabled: true, match, provider: input.provider, targetModel });
-    persist();
-    publish();
-  });
+  ipcMain.handle(
+    "pilot:addRoute",
+    (_event, input: { match?: string; provider?: string; targetModel?: string; fallbacks?: Array<{ provider?: string; targetModel?: string }> }) => {
+      const match = (input.match ?? "").trim();
+      const targetModel = (input.targetModel ?? "").trim();
+      if (!isProvider(input.provider) || !match || !targetModel) return;
+      const fallbacks = (input.fallbacks ?? [])
+        .filter((hop) => isProvider(hop.provider) && (hop.targetModel ?? "").trim())
+        .map((hop) => ({ provider: hop.provider as ProviderId, targetModel: (hop.targetModel ?? "").trim() }));
+      config.routes.push({
+        id: randomUUID(),
+        enabled: true,
+        match,
+        provider: input.provider,
+        targetModel,
+        fallbacks: fallbacks.length ? fallbacks : undefined,
+      });
+      persist();
+      publish();
+    },
+  );
   ipcMain.handle("pilot:removeRoute", (_event, id: string) => {
     config.routes = config.routes.filter((route) => route.id !== id);
     persist();
@@ -716,6 +807,67 @@ function registerIpc(): void {
     flash = { text: translate(config.lang ?? "en", ok ? "oauth.restored" : "oauth.noBackup"), warn: !ok };
     persist();
     publish();
+  });
+  ipcMain.handle("pilot:setAntigravityClient", (_event, input: { clientId?: string; clientSecret?: string }) => {
+    config.antigravityClientId = (input.clientId ?? "").trim();
+    const secret = (input.clientSecret ?? "").trim();
+    if (secret) secrets.set(ANTIGRAVITY_CLIENT_SECRET, secret);
+    persist();
+    flash = { text: translate(config.lang ?? "en", "status.saved") };
+    publish();
+  });
+  ipcMain.handle("pilot:startAntigravityLogin", async () => {
+    const login = createGoogleLogin();
+    let loop: Awaited<ReturnType<typeof listenForOAuthCode>>;
+    try {
+      loop = await listenForOAuthCode(ANTIGRAVITY.callbackPort, ANTIGRAVITY.callbackPath);
+    } catch (error) {
+      flash = { text: error instanceof Error ? error.message : "callback", warn: true };
+      publish();
+      return { ok: false };
+    }
+    const client = googleClient();
+    if (!client.clientId || !client.clientSecret) {
+      loop.close();
+      flash = { text: translate(config.lang ?? "en", "oauth.antigravityMissing"), warn: true };
+      publish();
+      return { ok: false };
+    }
+    await shell.openExternal(buildAntigravityAuthorizeUrl(login, client));
+    flash = { text: translate(config.lang ?? "en", "oauth.opened") };
+    publish();
+    try {
+      const callback = await loop.done;
+      if (callback.state && callback.state !== login.state) throw new Error("state");
+      const request = googleExchangeRequest(login, callback.code, googleClient());
+      const response = await nodeHttp(request);
+      const exchanged = applyGoogleToken({ accessToken: "" }, response.status, response.body);
+      if (!exchanged.tokens?.refreshToken && !exchanged.tokens?.accessToken) throw new Error("token");
+      const tokens = exchanged.tokens;
+      const id = randomUUID();
+      secrets.set(id, googleTokensDocument({ ...tokens, accessToken: tokens.accessToken }));
+      config.accounts.push({
+        id,
+        provider: "antigravity",
+        label: tokens.email || "Antigravity",
+        enabled: true,
+        secretRef: id,
+        authKind: "oauth",
+        email: tokens.email,
+        expiresAt: tokens.expiresAt,
+        externalId: tokens.projectId,
+      });
+      config.providersEnabled.antigravity = true;
+      flash = { text: translate(config.lang ?? "en", "oauth.saved") };
+      persist();
+      publish();
+      return { ok: true };
+    } catch {
+      loop.close();
+      flash = { text: translate(config.lang ?? "en", "oauth.badCode"), warn: true };
+      publish();
+      return { ok: false };
+    }
   });
   ipcMain.handle("pilot:openMain", () => showMain());
 }

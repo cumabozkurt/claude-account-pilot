@@ -58,8 +58,8 @@ Bu uygulama o iş için küçük bir kumanda: hesaplar, sağlayıcılar ve model
 | Otomatik geçiş | Etkin hesap, bir kota penceresi **%98** olana kadar kalır (50–99 arası değişir). Sonra eşiğin altındaki sıradaki açık hesap kullanılır. Kısa süreli 429, kotayı dolu saymaz. |
 | Sürekli izleme | Vekil yaklaşık dakikada bir yoklar ve her yanıtın hız sınırı başlıklarını okur. |
 | Model rotaları | İlk açık eşleşme kazanır. Hazır kurallar `*haiku*` kalıbını OpenCode Go `deepseek-v4-flash` veya DeepSeek `deepseek-chat` modeline gönderir. İkisi de başlangıçta **kapalıdır**. |
-| Codex | `~/.codex/auth.json` varsa uygulama bu oturumu kullanıp Responses API konuşabilir. Belirteç yerinde okunur, kopyalanmaz. |
-| Cursor ve Antigravity | Yapılandırma klasörleri varsa tespit edilir. Kararlı bir herkese açık mesaj API'leri yoktur; trafik **onlar üzerinden yazılmaz**. |
+| Codex, OpenRouter, Gemini, Antigravity | Codex `~/.codex/auth.json` oturumunu kullanır ve erişim belirtecinin süresi dolunca yeniler. OpenRouter ve Gemini OpenAI sohbeti konuşur. Antigravity Google girişi ve yalnız daily Cloud Code ucunu kullanır. Her rotanın bir yedeği olabilir. |
+| Cursor | Yalnız tespit edilir. Kararlı bir mesaj API'si yoktur; Cursor adımı atlanır. Rotaya bir yedek verin. |
 | Sayılar | Sağlayıcı yüzde yayınlıyorsa yüzde; ayrıca giriş/çıkış belirteçleri, önbellek belirteçleri ve **tahmini** ABD doları maliyet. |
 | Tepsi | Menü çubuğu / sistem tepsisi, macOS menü çubuğunda yüzde, her platformda isteğe bağlı yüzen pencere. |
 | Claude ayarı | Tek düğme `ANTHROPIC_BASE_URL` değerini `~/.claude/settings.json` dosyasına yazar (CLI ve VS Code eklentisinin okuduğu dosya) ve yedeği geri yükleyebilir. İkinci eylem, seçilen aboneliği `~/.claude/.credentials.json` dosyasına ve macOS'ta Claude Code anahtarlık kaydına yazar; vekili yok sayan istemciler için. |
@@ -165,7 +165,7 @@ Araştırmada sürekli görünen diğer yığın Tauri 2'dir (CC Switch, QuotaBa
 - Claude Desktop sohbet uygulaması kendi şifreli oturumunu saklar. Kimlik değiştirmek Claude Code'u ve VS Code eklentisini günceller. Desktop sohbetini başka bir hesaba sokmaz.
 - OpenCode Go ve DeepSeek kullanılma yüzdesi yayınlamaz. Belirteç, tahmini maliyet ve API dönerse DeepSeek bakiyesi görürsünüz.
 - Codex kota pencereleri yalnız yukarı akış gönderirse görünür. Oturum dosyası okunur, bu uygulama tarafından yenilenmez.
-- Cursor ve Antigravity'nin herkese açık kota API'si ve Claude Code araç çağrılarını koruyan kararlı bir yerel mesaj API'si yoktur. Tespit edilirler, yönlendirme yapılmaz.
+- Cursor'ın araç çağrılarını koruyan kararlı bir mesaj API'si yoktur. Tespit edilir, yönlendirilmez. Diğer sınırlar [docs/LIMITATIONS.md](docs/LIMITATIONS.md) içindedir. Antigravity, Google'ın daily Cloud Code ucuna gider. OpenRouter ve Gemini OpenAI uyumlu adımlardır; her rotada yedek vardır.
 - Maliyet sütunundaki fiyatlar göstermek için liste fiyatı tahminidir.
 - Derlemeler imzasızdır.
 - Menü çubuğu yüzdesi yalnız macOS'tadır. Linux ve Windows tepsi ipucunu ve isteğe bağlı yüzen pencereyi kullanır; bu masaüstlerinde genel bir menü çubuğu yoktur.

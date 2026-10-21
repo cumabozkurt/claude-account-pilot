@@ -39,6 +39,7 @@ interface RouteRow {
   match: string;
   provider: ProviderId;
   targetModel: string;
+  fallbacks?: Array<{ provider: ProviderId; targetModel: string }>;
 }
 
 interface Activity {
@@ -57,6 +58,7 @@ interface PublicState {
   widgetEnabled: boolean;
   launchAtLogin: boolean;
   notify: boolean;
+  antigravityClientId: string;
   encryptionWarning: boolean;
   providersEnabled: Record<ProviderId, boolean>;
   accounts: PublicAccount[];
@@ -81,7 +83,12 @@ interface PilotBridge {
   toggleAccount: (id: string, enabled: boolean) => Promise<void>;
   removeAccount: (id: string) => Promise<void>;
   toggleRoute: (id: string, enabled: boolean) => Promise<void>;
-  addRoute: (input: { match: string; provider: ProviderId; targetModel: string }) => Promise<void>;
+  addRoute: (input: {
+    match: string;
+    provider: ProviderId;
+    targetModel: string;
+    fallbacks?: Array<{ provider: ProviderId; targetModel: string }>;
+  }) => Promise<void>;
   removeRoute: (id: string) => Promise<void>;
   moveRoute: (id: string, direction: -1 | 1) => Promise<void>;
   importDiscovered: (provider: ProviderId) => Promise<void>;
@@ -93,6 +100,8 @@ interface PilotBridge {
   importClaudeCredentials: (raw: string) => Promise<{ ok: boolean }>;
   syncClaudeAccount: (id: string) => Promise<{ ok: boolean }>;
   restoreClaudeCredentials: () => Promise<void>;
+  startAntigravityLogin: () => Promise<{ ok: boolean }>;
+  setAntigravityClient: (input: { clientId: string; clientSecret: string }) => Promise<void>;
   openMain: () => Promise<void>;
   onState: (listener: (state: PublicState) => void) => () => void;
 }
@@ -316,7 +325,9 @@ function renderRoutes(): void {
     const head = document.createElement("div");
     head.className = "account-head";
     const title = document.createElement("strong");
-    title.textContent = `${route.match} → ${t(`provider.${route.provider}`)} · ${route.targetModel}`;
+    const fallback = route.fallbacks?.[0];
+    const fallbackText = fallback ? ` → ${t(`provider.${fallback.provider}`)} · ${fallback.targetModel}` : "";
+    title.textContent = `${route.match} → ${t(`provider.${route.provider}`)} · ${route.targetModel}${fallbackText}`;
     const toggle = document.createElement("button");
     toggle.type = "button";
     toggle.className = "switch";
@@ -418,6 +429,8 @@ function renderProxy(): void {
   if (widget) widget.checked = state.widgetEnabled;
   const notify = document.querySelector<HTMLInputElement>("#notify");
   if (notify) notify.checked = state.notify;
+  const clientId = document.querySelector<HTMLInputElement>("#ag-client-id");
+  if (clientId && document.activeElement !== clientId) clientId.value = state.antigravityClientId ?? "";
   const banner = document.querySelector("#banner");
   if (banner) {
     const parts = [];
@@ -461,7 +474,7 @@ function render(): void {
 }
 
 function fillProviderSelects(): void {
-  for (const id of ["#acc-provider", "#route-provider"] as const) {
+  for (const id of ["#acc-provider", "#route-provider", "#route-fallback"] as const) {
     const select = document.querySelector<HTMLSelectElement>(id);
     if (!select || select.options.length === PROVIDER_IDS.length) {
       if (select) {
@@ -513,6 +526,16 @@ function bind(): void {
     void window.pilot.setNotify((event.target as HTMLInputElement).checked);
   });
   document.querySelector("#oauth-open")?.addEventListener("click", () => void window.pilot.startClaudeLogin());
+  document.querySelector("#oauth-antigravity")?.addEventListener("click", () => void window.pilot.startAntigravityLogin());
+  document.querySelector("#oauth-google")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const clientId = document.querySelector<HTMLInputElement>("#ag-client-id")?.value ?? "";
+    const clientSecret = document.querySelector<HTMLInputElement>("#ag-client-secret")?.value ?? "";
+    void window.pilot.setAntigravityClient({ clientId, clientSecret }).then(() => {
+      const secret = document.querySelector<HTMLInputElement>("#ag-client-secret");
+      if (secret) secret.value = "";
+    });
+  });
   document.querySelector("#oauth-restore")?.addEventListener("click", () => void window.pilot.restoreClaudeCredentials());
   document.querySelector("#oauth-finish")?.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -546,7 +569,10 @@ function bind(): void {
     const match = document.querySelector<HTMLInputElement>("#route-match")?.value ?? "";
     const provider = document.querySelector<HTMLSelectElement>("#route-provider")?.value as ProviderId;
     const targetModel = document.querySelector<HTMLInputElement>("#route-model")?.value ?? "";
-    void window.pilot.addRoute({ match, provider, targetModel }).then(() => {
+    const fallbackProvider = document.querySelector<HTMLSelectElement>("#route-fallback")?.value as ProviderId;
+    const fallbackModel = document.querySelector<HTMLInputElement>("#route-fallback-model")?.value?.trim() ?? "";
+    const fallbacks = fallbackModel ? [{ provider: fallbackProvider, targetModel: fallbackModel }] : undefined;
+    void window.pilot.addRoute({ match, provider, targetModel, fallbacks }).then(() => {
       document.querySelector<HTMLFormElement>("#add-route")?.reset();
     });
   });

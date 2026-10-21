@@ -6,7 +6,9 @@ export type ProviderId =
   | "deepseek"
   | "codex"
   | "cursor"
-  | "antigravity";
+  | "antigravity"
+  | "openrouter"
+  | "gemini";
 
 export type AuthKind = "api-key" | "oauth" | "discovered";
 
@@ -32,6 +34,11 @@ export interface Account {
   lineage?: string;
 }
 
+export interface RouteFallback {
+  provider: ProviderId;
+  targetModel: string;
+}
+
 export interface ModelRoute {
   id: string;
   enabled: boolean;
@@ -39,6 +46,8 @@ export interface ModelRoute {
   match: string;
   provider: ProviderId;
   targetModel: string;
+  /** Tried in order when the primary provider has no usable account or is unsupported. */
+  fallbacks?: RouteFallback[];
 }
 
 export interface QuotaWindow {
@@ -82,6 +91,8 @@ export interface AppConfig {
   notify: boolean;
   /** Account written into ~/.claude/.credentials.json for the official clients. */
   syncedAccountId: string | null;
+  /** Antigravity OAuth client id. The matching secret lives in the keychain, not here. */
+  antigravityClientId: string;
   providersEnabled: Record<ProviderId, boolean>;
   accounts: Account[];
   routes: ModelRoute[];
@@ -100,6 +111,8 @@ export const PROVIDER_IDS: ProviderId[] = [
   "codex",
   "cursor",
   "antigravity",
+  "openrouter",
+  "gemini",
 ];
 
 export const DEFAULT_PORT = 15721;
@@ -116,6 +129,7 @@ export function defaultConfig(): AppConfig {
     launchAtLogin: false,
     notify: true,
     syncedAccountId: null,
+    antigravityClientId: "",
     providersEnabled: {
       claude: true,
       "opencode-go": false,
@@ -123,6 +137,8 @@ export function defaultConfig(): AppConfig {
       codex: false,
       cursor: false,
       antigravity: false,
+      openrouter: false,
+      gemini: false,
     },
     accounts: [],
     routes: [

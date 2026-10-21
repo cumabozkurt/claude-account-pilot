@@ -4,6 +4,8 @@ import { request as httpRequest } from "node:http";
 import type { Account, ActivityEvent, ProviderId } from "./types.js";
 import { planRequest, type RuntimeSnapshot } from "./plan.js";
 import { messagesUrl, providerSpec } from "./providers.js";
+import { CODEX_OAUTH } from "./oauth-codex.js";
+import { anthropicToCloudCode, CloudCodeStream, cloudCodeToAnthropic } from "./cloudcode.js";
 import { windowsFromHeaders, worstPercent } from "./quota.js";
 import {
   anthropicError,
@@ -196,6 +198,7 @@ async function handleMessages(
     return;
   }
 
+  const avoid: string[] = [];
   const send = async (current: Extract<typeof plan, { kind: "forward" }>, allowFailover: boolean): Promise<void> => {
     const secret = await deps.getSecret(current.account);
     if (!secret) {
@@ -241,28 +244,44 @@ async function handleMessages(
     } else if (spec.auth === "bearer") {
       headers.authorization = `Bearer ${secret}`;
     }
-    if (current.provider === "codex" && current.account.externalId) {
-      headers["chatgpt-account-id"] = current.account.externalId;
+    if (current.provider === "codex") {
+      if (current.account.externalId) headers["chatgpt-account-id"] = current.account.externalId;
+      headers.originator = CODEX_OAUTH.originator;
+      headers.version = CODEX_OAUTH.version;
+      headers["openai-beta"] = "responses=experimental";
+      headers["user-agent"] = `${CODEX_OAUTH.originator}/${CODEX_OAUTH.version}`;
     }
     const beta = req.headers["anthropic-beta"];
     if (typeof beta === "string" && current.protocol === "anthropic") headers["anthropic-beta"] = beta;
 
     let upstreamBody: Record<string, unknown> = body;
     if (current.protocol === "openai-chat") upstreamBody = anthropicToChatCompletions(body, current.model);
-    if (current.protocol === "openai-responses") upstreamBody = anthropicToResponses(body, current.model);
+    if (current.protocol === "openai-responses") {
+      upstreamBody = anthropicToResponses(body, current.model);
+      if (current.provider === "codex") delete upstreamBody.max_output_tokens;
+    }
+    if (current.protocol === "cloudcode") upstreamBody = anthropicToCloudCode(body, current.model, current.account.externalId);
 
     const controller = new AbortController();
     res.on("close", () => controller.abort());
     let result: UpstreamResult;
     try {
       result = await upstream({
-        url: messagesUrl(spec),
+        url: messagesUrl(spec, Boolean(body.stream)),
         method: "POST",
         headers,
         body: Buffer.from(JSON.stringify(upstreamBody)),
         signal: controller.signal,
       });
     } catch (error) {
+      if (allowFailover) {
+        avoid.push(current.account.id);
+        const retry = planRequest(deps.getState(), requested, Date.now(), avoid);
+        if (retry.kind === "forward" && retry.account.id !== current.account.id) {
+          await send({ ...retry, switched: true, reason: "next-available" }, false);
+          return;
+        }
+      }
       const message = error instanceof Error ? error.message : "upstream failed";
       writeJson(res, 502, JSON.parse(anthropicError(message)));
       return;
@@ -272,12 +291,16 @@ async function handleMessages(
     const percent = worstPercent(windows);
     if (percent != null) deps.onQuota(current.account.id, percent, windows);
 
+    const nextPlan = () => {
+      avoid.push(current.account.id);
+      state = deps.getState();
+      return planRequest(state, requested, Date.now(), avoid);
+    };
     const shortLimit = result.status === 429 && (percent == null || percent < state.config.switchThreshold);
     if (shortLimit) {
       deps.onCooldown(current.account.id, Date.now() + 60_000);
       if (allowFailover) {
-        state = deps.getState();
-        const retry = planRequest(state, requested);
+        const retry = nextPlan();
         if (retry.kind === "forward" && retry.account.id !== current.account.id) {
           deps.onActivity({
             at: new Date().toISOString(),
@@ -290,10 +313,11 @@ async function handleMessages(
       }
     }
 
-    if (result.status === 429 && percent != null && percent >= state.config.switchThreshold && allowFailover) {
-      deps.onQuota(current.account.id, 100, windows.length ? windows : [{ label: "5h", percent: 100 }]);
-      state = deps.getState();
-      const retry = planRequest(state, requested);
+    if ((result.status === 429 || result.status >= 500) && allowFailover) {
+      if (result.status === 429 && percent != null && percent >= state.config.switchThreshold) {
+        deps.onQuota(current.account.id, 100, windows.length ? windows : [{ label: "5h", percent: 100 }]);
+      }
+      const retry = nextPlan();
       if (retry.kind === "forward" && retry.account.id !== current.account.id) {
         await send({ ...retry, switched: true, reason: "next-available" }, false);
         return;
@@ -323,7 +347,9 @@ async function handleMessages(
     const message =
       current.protocol === "openai-responses"
         ? responsesToAnthropic(payload, current.model)
-        : chatCompletionToAnthropic(payload, current.model);
+        : current.protocol === "cloudcode"
+          ? cloudCodeToAnthropic(payload, current.model)
+          : chatCompletionToAnthropic(payload, current.model);
     deps.onUsage(current.account.id, current.model, {
       inputTokens: message.usage.input_tokens,
       outputTokens: message.usage.output_tokens,
@@ -392,7 +418,11 @@ async function pipeTranslatedStream(
     connection: "keep-alive",
   });
   const translator =
-    plan.protocol === "openai-responses" ? new ResponsesStream(plan.model) : new OpenAiChatStream(plan.model);
+    plan.protocol === "openai-responses"
+      ? new ResponsesStream(plan.model)
+      : plan.protocol === "cloudcode"
+        ? new CloudCodeStream(plan.model)
+        : new OpenAiChatStream(plan.model);
   for await (const chunk of result.stream) {
     res.write(translator.push(chunk.toString("utf8")));
   }
