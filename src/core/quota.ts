@@ -77,7 +77,7 @@ export function windowsFromHeaders(headers: Record<string, string | undefined>):
 }
 
 export function worstPercent(windows: QuotaWindow[]): number | null {
-  const ranked = windows.filter((window) => window.label === "5h" || window.label === "7d");
+  const ranked = windows.filter((window) => window.label === "5h" || window.label === "7d" || window.label === "model");
   const source = ranked.length > 0 ? ranked : windows.filter((window) => window.label !== "balance");
   if (source.length === 0) return null;
   return source.reduce((max, window) => Math.max(max, window.percent), 0);
@@ -126,6 +126,33 @@ export function windowsFromUsageJson(payload: unknown): QuotaWindow[] {
       if (percent == null) continue;
       windows.push({ label: group.label, percent, resetsAt: childReset(node) });
       break;
+    }
+  }
+
+  const extra = root.extra_usage ?? root.extraUsage;
+  if (extra && typeof extra === "object") {
+    const node = extra as Record<string, unknown>;
+    if (node.is_enabled !== false) {
+      const percent = childNumber(node, percentKeys);
+      if (percent != null) {
+        windows.push({ label: "balance", percent, resetsAt: childReset(node), name: "extra" });
+      }
+    }
+  }
+
+  const limits = root.limits;
+  if (Array.isArray(limits)) {
+    for (const item of limits) {
+      if (!item || typeof item !== "object") continue;
+      const node = item as Record<string, unknown>;
+      const scope = node.scope;
+      const model =
+        scope && typeof scope === "object" ? (scope as Record<string, unknown>).model : undefined;
+      const display =
+        model && typeof model === "object" ? (model as Record<string, unknown>).display_name : undefined;
+      const percent = asPercent(node.percent as string | number | undefined) ?? childNumber(node, percentKeys);
+      if (typeof display !== "string" || !display || percent == null) continue;
+      windows.push({ label: "model", percent, resetsAt: childReset(node), name: display });
     }
   }
   return windows;

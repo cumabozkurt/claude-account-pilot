@@ -52,7 +52,33 @@
         <div class="checks">
           <label><input id="launch" type="checkbox" /> <span data-i18n="settings.launch"></span></label>
           <label><input id="widget" type="checkbox" /> <span data-i18n="settings.widget"></span></label>
+          <label><input id="notify" type="checkbox" /> <span data-i18n="settings.notify"></span></label>
         </div>
+      </section>
+
+      <section class="card">
+        <h2 data-i18n="oauth.title"></h2>
+        <p class="hint" data-i18n="oauth.help"></p>
+        <p class="hint" data-i18n="oauth.desktopLimit"></p>
+        <div class="actions">
+          <button type="button" id="oauth-open" class="primary" data-i18n="oauth.open"></button>
+          <button type="button" id="oauth-restore" data-i18n="oauth.restore"></button>
+        </div>
+        <form id="oauth-finish" class="form">
+          <label class="field grow">
+            <span data-i18n="oauth.paste"></span>
+            <input id="oauth-code" autocomplete="off" />
+          </label>
+          <button type="submit" data-i18n="oauth.finish"></button>
+        </form>
+        <form id="oauth-import" class="form">
+          <label class="field grow">
+            <span data-i18n="oauth.import"></span>
+            <textarea id="oauth-json" rows="3" spellcheck="false"></textarea>
+          </label>
+          <button type="submit" data-i18n="oauth.import"></button>
+        </form>
+        <p class="hint" data-i18n="oauth.importHelp"></p>
       </section>
 
       <section class="card">

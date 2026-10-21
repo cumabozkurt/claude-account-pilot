@@ -67,13 +67,15 @@ h2 { font-size: 1rem; margin: 0 0 0.35rem; }
 .status { margin: 0; font-weight: 600; }
 .field { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.85rem; }
 .field.grow, .form .field.grow { flex: 1; }
-input, select {
+input, select, textarea {
   border: 1px solid var(--line);
   background: transparent;
   border-radius: 10px;
   padding: 0.45rem 0.55rem;
   min-width: 0;
 }
+textarea { width: 100%; resize: vertical; font-family: ui-monospace, monospace; }
+.spark { width: 120px; height: 28px; color: var(--accent); }
 .lang button { min-width: 2.6rem; }
 .providers, .account, .route { display: grid; gap: 0.55rem; }
 .provider, .account, .route {

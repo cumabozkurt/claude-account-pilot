@@ -40,4 +40,15 @@ describe("quota parsing", () => {
     assert.equal(windows.length, 2);
     assert.equal(worstPercent(windows), 50);
   });
+
+  it("reads per-model weekly windows and extra usage without letting spend win the switch", () => {
+    const windows = windowsFromUsageJson({
+      five_hour: { utilization: 10 },
+      extra_usage: { is_enabled: true, utilization: 90, resets_at: "2026-11-01T00:00:00Z" },
+      limits: [{ percent: 99, resets_at: "2026-10-28T00:00:00Z", scope: { model: { display_name: "Fable" } } }],
+    });
+    assert.equal(windows.find((window) => window.label === "model")?.name, "Fable");
+    assert.equal(windows.find((window) => window.label === "balance")?.percent, 90);
+    assert.equal(worstPercent(windows), 99);
+  });
 });

@@ -24,6 +24,12 @@ export interface Account {
   baseUrl?: string;
   /** Non-secret id forwarded to Codex (ChatGPT-Account-Id). */
   externalId?: string;
+  /** Account email from the profile endpoint. Not a secret. */
+  email?: string;
+  /** Access-token expiry in epoch milliseconds, when known. */
+  expiresAt?: number;
+  /** sha256 of the refresh token. Used to avoid rotating the login Claude Code owns. */
+  lineage?: string;
 }
 
 export interface ModelRoute {
@@ -36,9 +42,11 @@ export interface ModelRoute {
 }
 
 export interface QuotaWindow {
-  label: "5h" | "7d" | "requests" | "tokens" | "balance";
+  label: "5h" | "7d" | "requests" | "tokens" | "balance" | "model";
   percent: number;
   resetsAt?: string;
+  /** Per-model weekly window name, when the provider sent one. */
+  name?: string;
 }
 
 export interface AccountQuota {
@@ -70,6 +78,10 @@ export interface AppConfig {
   switchThreshold: number;
   widgetEnabled: boolean;
   launchAtLogin: boolean;
+  /** Desktop notifications when a window crosses the threshold or the pool is full. */
+  notify: boolean;
+  /** Account written into ~/.claude/.credentials.json for the official clients. */
+  syncedAccountId: string | null;
   providersEnabled: Record<ProviderId, boolean>;
   accounts: Account[];
   routes: ModelRoute[];
@@ -102,6 +114,8 @@ export function defaultConfig(): AppConfig {
     switchThreshold: DEFAULT_THRESHOLD,
     widgetEnabled: false,
     launchAtLogin: false,
+    notify: true,
+    syncedAccountId: null,
     providersEnabled: {
       claude: true,
       "opencode-go": false,

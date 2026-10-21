@@ -54,7 +54,7 @@ Bu uygulama o iş için küçük bir kumanda: hesaplar, sağlayıcılar ve model
 
 | | |
 |---|---|
-| Hesaplar | Claude API anahtarı veya OAuth belirteci ekleyin. Bu bilgisayarda bulunan Claude Code veya Codex oturumunu içe aktarın. Her satırın aç/kapa anahtarı vardır. |
+| Hesaplar | Claude API anahtarı veya OAuth belirteci ekleyin. Claude Pro/Max aboneliğiyle giriş yapın (tarayıcı PKCE, kodu yapıştırın) veya `~/.claude/.credentials.json` içe aktarın. Bu bilgisayarda bulunan Codex oturumunu da içe aktarın. Her satırın aç/kapa anahtarı vardır. |
 | Otomatik geçiş | Etkin hesap, bir kota penceresi **%98** olana kadar kalır (50–99 arası değişir). Sonra eşiğin altındaki sıradaki açık hesap kullanılır. Kısa süreli 429, kotayı dolu saymaz. |
 | Sürekli izleme | Vekil yaklaşık dakikada bir yoklar ve her yanıtın hız sınırı başlıklarını okur. |
 | Model rotaları | İlk açık eşleşme kazanır. Hazır kurallar `*haiku*` kalıbını OpenCode Go `deepseek-v4-flash` veya DeepSeek `deepseek-chat` modeline gönderir. İkisi de başlangıçta **kapalıdır**. |
@@ -62,7 +62,7 @@ Bu uygulama o iş için küçük bir kumanda: hesaplar, sağlayıcılar ve model
 | Cursor ve Antigravity | Yapılandırma klasörleri varsa tespit edilir. Kararlı bir herkese açık mesaj API'leri yoktur; trafik **onlar üzerinden yazılmaz**. |
 | Sayılar | Sağlayıcı yüzde yayınlıyorsa yüzde; ayrıca giriş/çıkış belirteçleri, önbellek belirteçleri ve **tahmini** ABD doları maliyet. |
 | Tepsi | Menü çubuğu / sistem tepsisi, macOS menü çubuğunda yüzde, her platformda isteğe bağlı yüzen pencere. |
-| Claude ayarı | Tek düğme `ANTHROPIC_BASE_URL` değerini `~/.claude/settings.json` dosyasına yazar (CLI ve VS Code eklentisinin okuduğu dosya) ve yedeği geri yükleyebilir. |
+| Claude ayarı | Tek düğme `ANTHROPIC_BASE_URL` değerini `~/.claude/settings.json` dosyasına yazar (CLI ve VS Code eklentisinin okuduğu dosya) ve yedeği geri yükleyebilir. İkinci eylem, seçilen aboneliği `~/.claude/.credentials.json` dosyasına ve macOS'ta Claude Code anahtarlık kaydına yazar; vekili yok sayan istemciler için. |
 | Diller | Türkçe ve İngilizce. İlk açılışta işletim sistemi dili, sonra seçim hatırlanır. |
 | Gizlilik | Yalnız `127.0.0.1`. Telemetri yok. İstemler saklanmaz. Sırlar işletim sistemi anahtarlığında. |
 
@@ -161,7 +161,8 @@ Araştırmada sürekli görünen diğer yığın Tauri 2'dir (CC Switch, QuotaBa
 
 ## Sınırlar
 
-- Anthropic, resmi istemciden gelmeyen bir abonelik OAuth belirtecini reddedebilir. API anahtarları çalışmaya devam eder. Bu uygulama OAuth belirteçlerini yenilemez; yanlış bir yenileme oturumu iptal edebilir.
+- Anthropic, resmi istemciden gelmeyen bir abonelik OAuth belirtecini reddedebilir. API anahtarları çalışmaya devam eder. Yenileme, Claude Code ile aynı JSON belirteç ucunu kullanır. Claude Code'un diskte tuttuğu oturum hiç yenilenmez. Reddedilen bir yenileme (`invalid_grant`) "yeniden giriş" olarak gösterilir ve tekrar denenmez.
+- Claude Desktop sohbet uygulaması kendi şifreli oturumunu saklar. Kimlik değiştirmek Claude Code'u ve VS Code eklentisini günceller. Desktop sohbetini başka bir hesaba sokmaz.
 - OpenCode Go ve DeepSeek kullanılma yüzdesi yayınlamaz. Belirteç, tahmini maliyet ve API dönerse DeepSeek bakiyesi görürsünüz.
 - Codex kota pencereleri yalnız yukarı akış gönderirse görünür. Oturum dosyası okunur, bu uygulama tarafından yenilenmez.
 - Cursor ve Antigravity'nin herkese açık kota API'si ve Claude Code araç çağrılarını koruyan kararlı bir yerel mesaj API'si yoktur. Tespit edilirler, yönlendirme yapılmaz.

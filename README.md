@@ -54,7 +54,7 @@ This app is the small control surface for that: accounts, providers, and model r
 
 | | |
 |---|---|
-| Accounts | Add Claude API keys or OAuth tokens. Import a Claude Code or Codex login found on this computer. Each row has an on/off switch. |
+| Accounts | Add Claude API keys or OAuth tokens. Sign in to a Claude Pro/Max subscription (browser PKCE, paste the code) or import `~/.claude/.credentials.json`. Import a Codex login found on this computer. Each row has an on/off switch. |
 | Auto switch | The active account is kept until a quota window reaches **98%** (editable, 50–99). The next enabled account under the line is used. A short per-minute 429 does not mark the quota full. |
 | Always on | The proxy polls about once a minute, and it also reads rate-limit headers on every response. |
 | Model routes | First enabled glob wins. The built-in rules send `*haiku*` to OpenCode Go `deepseek-v4-flash` or to DeepSeek `deepseek-chat`. Both ship **off**. |
@@ -62,7 +62,7 @@ This app is the small control surface for that: accounts, providers, and model r
 | Cursor and Antigravity | Detected when their config directories exist. They have no stable public messages API, so traffic is **not** rewritten through them. |
 | Numbers | Percent when a provider publishes one, plus input/output tokens, cache tokens, and an **estimated** USD cost. |
 | Tray | Menu-bar / system tray, percent in the macOS menu bar, optional always-on-top widget on every platform. |
-| Claude settings | One button writes `ANTHROPIC_BASE_URL` into `~/.claude/settings.json` (the file the CLI and the VS Code extension read) and can restore the backup. |
+| Claude settings | One button writes `ANTHROPIC_BASE_URL` into `~/.claude/settings.json` (the file the CLI and the VS Code extension read) and can restore the backup. A second action writes the chosen subscription into `~/.claude/.credentials.json` and, on macOS, the Claude Code keychain item, for clients that ignore the proxy. |
 | Languages | English and Turkish. OS language on first launch, switch remembered. |
 | Privacy | Listens on `127.0.0.1` only. No telemetry. Prompts are not stored. Secrets go to the OS keychain. |
 
@@ -161,7 +161,8 @@ Tauri 2 is the other stack that shows up constantly in the research (CC Switch, 
 
 ## Limitations
 
-- Anthropic may reject a subscription OAuth token that does not come from the official client. API keys keep working. This app does not refresh OAuth tokens; a bad refresh can revoke the session.
+- Anthropic may reject a subscription OAuth token that does not come from the official client. API keys keep working. Refresh uses the same JSON token endpoint as Claude Code. A login Claude Code currently has on disk is never refreshed. A rejected refresh (`invalid_grant`) is shown as "sign in again" and is not retried.
+- Claude Desktop's chat app stores its own encrypted session. Switching credentials updates Claude Code and the VS Code extension. It does not sign the Desktop chat app into another account.
 - OpenCode Go and DeepSeek do not publish a percent-used quota. You get tokens, estimated cost, and a DeepSeek balance when the API returns one.
 - Codex quota windows appear only if the upstream sends them. The login file is read, not refreshed, by this app.
 - Cursor and Antigravity have no public quota API and no stable local messages API that preserves Claude Code tool calls. They are detected, not routed.

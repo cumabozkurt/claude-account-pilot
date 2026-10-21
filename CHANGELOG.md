@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.0] - 2026-10-21
+
+- Claude Pro/Max subscription login uses the public Claude Code OAuth client: PKCE in the browser, paste the code, store the rotated refresh token in the OS keychain.
+- Import `~/.claude/.credentials.json`. The same refresh lineage updates the existing account instead of creating a duplicate.
+- Background polling reads `GET /api/oauth/usage` (5-hour, 7-day, per-model weekly windows, and extra usage). A window that has reached its reset time is dropped so the account can be used again before the next probe.
+- Expired access tokens are refreshed with a JSON grant. The login Claude Code currently has on disk is polled and never refreshed, so the official client keeps its session.
+- "Use in Claude Code" writes `~/.claude/.credentials.json` (with a backup) and, on macOS, the `Claude Code-credentials` keychain item. Restore puts the backup back.
+- Claude Desktop's chat app keeps its own encrypted session. That switch is documented in the app; it is not pretended to work.
+- Quota history (no prompts) is saved for the charts. Notifications fire once when an account crosses the threshold, when a reset is inside 15 minutes, and when every enabled account is full.
+
 ## [0.2.0] - 2026-10-21
 
 - Quota windows, the active account, and the activity list are saved on disk and restored after a restart. The file still has no secrets.

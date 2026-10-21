@@ -34,6 +34,8 @@ export function loadConfig(path: string): AppConfig {
     switchThreshold: Number.isFinite(threshold) ? Math.min(99, Math.max(50, threshold)) : base.switchThreshold,
     widgetEnabled: Boolean(raw.widgetEnabled),
     launchAtLogin: Boolean(raw.launchAtLogin),
+    notify: raw.notify !== false,
+    syncedAccountId: typeof raw.syncedAccountId === "string" ? raw.syncedAccountId : null,
     providersEnabled: providers,
     accounts: Array.isArray(raw.accounts)
       ? raw.accounts.filter((account) => account && typeof account === "object" && isProvider(account.provider) && typeof account.id === "string")

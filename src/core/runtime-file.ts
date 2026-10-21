@@ -1,5 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import type { QuotaSample } from "./history.js";
 import type { ActivityEvent, ProviderId, QuotaSource, QuotaWindow } from "./types.js";
 
 export interface StoredQuota {
@@ -16,10 +17,12 @@ export interface PersistedRuntime {
   percentByAccount: Record<string, number | null>;
   quotas: Record<string, StoredQuota>;
   activity: ActivityEvent[];
+  history: QuotaSample[];
+  alertSeen: string[];
 }
 
 export function emptyRuntime(): PersistedRuntime {
-  return { version: 1, activeByProvider: {}, percentByAccount: {}, quotas: {}, activity: [] };
+  return { version: 1, activeByProvider: {}, percentByAccount: {}, quotas: {}, activity: [], history: [], alertSeen: [] };
 }
 
 export function loadRuntime(path: string): PersistedRuntime {
@@ -32,6 +35,8 @@ export function loadRuntime(path: string): PersistedRuntime {
       percentByAccount: parsed.percentByAccount ?? {},
       quotas: parsed.quotas ?? {},
       activity: Array.isArray(parsed.activity) ? parsed.activity.slice(0, 40) : [],
+      history: Array.isArray(parsed.history) ? parsed.history.slice(-4000) : [],
+      alertSeen: Array.isArray(parsed.alertSeen) ? parsed.alertSeen.filter((item) => typeof item === "string").slice(-200) : [],
     };
   } catch {
     return emptyRuntime();
@@ -46,6 +51,8 @@ export function saveRuntime(path: string, state: PersistedRuntime): void {
     percentByAccount: state.percentByAccount,
     quotas: state.quotas,
     activity: state.activity.slice(0, 40),
+    history: (state.history ?? []).slice(-4000),
+    alertSeen: (state.alertSeen ?? []).slice(-200),
   };
   writeFileSync(path, `${JSON.stringify(safe, null, 2)}\n`, { mode: 0o600 });
 }

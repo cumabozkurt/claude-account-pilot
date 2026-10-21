@@ -1,5 +1,15 @@
 # Değişiklik günlüğü
 
+## [0.3.0] - 2026-10-21
+
+- Claude Pro/Max abonelik girişi, Claude Code'un herkese açık OAuth istemcisini kullanır: tarayıcıda PKCE, kodu yapıştırma, dönen yenileme belirtecinin işletim sistemi anahtarlığında saklanması.
+- `~/.claude/.credentials.json` içe aktarılır. Aynı yenileme soyu yeni bir hesap açmaz, var olanı günceller.
+- Arka plan yoklaması `GET /api/oauth/usage` okur (5 saat, 7 gün, modele özel haftalık pencereler ve ek kullanım). Sıfırlanma zamanı geçmiş bir pencere düşülür; hesap sonraki yoklamadan önce yeniden kullanılabilir.
+- Süresi dolan erişim belirteçleri JSON grant ile yenilenir. Claude Code'un diskteki oturumu sorgulanır ama yenilenmez; resmi istemci kendi oturumunu korur.
+- "Claude Code'da kullan" `~/.claude/.credentials.json` dosyasını yedekleyerek yazar ve macOS'ta `Claude Code-credentials` anahtarlık kaydını günceller. Geri al, yedeği yerine koyar.
+- Claude Desktop sohbeti kendi şifreli oturumunu tutar. Bu sınır uygulama içinde yazılır; çalışıyormuş gibi gösterilmez.
+- Kota geçmişi (istemler olmadan) grafik için saklanır. Bildirimler, bir hesap eşiği geçince, sıfırlanmaya 15 dakika kalınca ve açık hesapların hepsi dolunca bir kez gelir.
+
 ## [0.2.0] - 2026-10-21
 
 - Kota pencereleri, etkin hesap ve hareket listesi diske yazılır ve yeniden açılınca geri gelir. Dosyada sır yoktur.

@@ -1,13 +1,29 @@
-import { app, BrowserWindow, Menu, Tray, ipcMain, nativeImage, type NativeImage } from "electron";
+import { app, BrowserWindow, Menu, Notification, Tray, ipcMain, nativeImage, shell, type NativeImage } from "electron";
+import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { homedir } from "node:os";
+import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { applyClaudeBaseUrl, claudeEnvSnippet, restoreClaudeSettings } from "../core/claude-settings.js";
 import { loadConfig, saveConfig } from "../core/config.js";
-import { DISCOVERED_CLAUDE, DISCOVERED_CODEX, readClaudeOauth, readCodexAuth } from "../core/credentials.js";
+import { captureDisk, claudeCodeOwns, keychainPlan, readCredentialsRaw, restoreCredentialsFile, writeCredentialsFile } from "../core/credential-swap.js";
+import { DISCOVERED_CLAUDE, DISCOVERED_CODEX, readCodexAuth } from "../core/credentials.js";
+import { appendSample, type QuotaSample } from "../core/history.js";
+import { bindingReset, evaluateAlerts, percentAfterReset } from "../core/monitor.js";
+import {
+  accessTokenFromSecret,
+  blobFromSecret,
+  buildAuthorizeUrl,
+  createPkce,
+  credentialsDocument,
+  exchangeClaudeCode,
+  lineageOf,
+  type HttpClient,
+  type PkceLogin,
+} from "../core/oauth-claude.js";
+import { pollClaudeSubscription } from "../core/subscription.js";
 import { discoverInstalls, type Discovery } from "../core/discover.js";
 import { detectLang, translate } from "../core/i18n.js";
 import { emptyLedger, loadLedger, recordUsage, saveLedger } from "../core/ledger.js";
@@ -51,6 +67,9 @@ let quitting = false;
 let probeTimer: NodeJS.Timeout | null = null;
 const activity: ActivityEvent[] = [];
 const quotaNotes = new Map<string, { windows: QuotaWindow[]; percent: number | null; source: QuotaSource; note?: string }>();
+let history: QuotaSample[] = [];
+let alertSeen: Record<string, true> = {};
+let pendingLogin: PkceLogin | null = null;
 let flash: { text: string; warn?: boolean } | null = null;
 
 const runtime: RuntimeSnapshot = {
@@ -62,6 +81,33 @@ const runtime: RuntimeSnapshot = {
 
 function home(): string {
   return app.getPath("home") || homedir();
+}
+
+function diskLineage(): string | undefined {
+  return captureDisk(readCredentialsRaw(home())).diskLineage;
+}
+
+const nodeHttp: HttpClient = async (request) => {
+  const response = await fetch(request.url, {
+    method: request.method,
+    headers: request.headers,
+    body: request.body,
+    signal: AbortSignal.timeout(15_000),
+  });
+  return { status: response.status, body: await response.text() };
+};
+
+function rememberQuota(accountId: string, windows: QuotaWindow[], percent: number | null, source: QuotaSource, note?: string): void {
+  runtime.percentByAccount[accountId] = percent;
+  const previous = quotaNotes.get(accountId);
+  quotaNotes.set(accountId, { windows, percent, source, note: note ?? previous?.note });
+  history = appendSample(history, { at: new Date().toISOString(), accountId, percent, windows });
+}
+
+function notifyUser(title: string, body: string): void {
+  if (!config.notify) return;
+  if (!Notification.isSupported()) return;
+  new Notification({ title, body }).show();
 }
 
 function persist(): void {
@@ -77,6 +123,8 @@ function snapshotRuntime(): PersistedRuntime {
     percentByAccount: { ...runtime.percentByAccount },
     quotas,
     activity: activity.slice(0, 40),
+    history,
+    alertSeen: Object.keys(alertSeen),
   };
 }
 
@@ -126,8 +174,16 @@ function publicState() {
         costUsd: usage?.costUsd ?? 0,
         source: quota?.source ?? (usage ? "local-estimate" : "none"),
         note: quota?.note,
+        authKind: account.authKind,
+        email: account.email,
+        synced: config.syncedAccountId === account.id,
+        ownedByClaudeCode: claudeCodeOwns(account.lineage, diskLineage()),
+        resetsAt: quota ? bindingReset(quota.windows) : undefined,
+        history: history.filter((sample) => sample.accountId === account.id).slice(-48).map((sample) => sample.percent),
       };
     }),
+    notify: config.notify,
+    syncedAccountId: config.syncedAccountId,
     routes: config.routes,
     discoveries: discoverInstalls(home()),
     activity,
@@ -145,27 +201,33 @@ function publish(): void {
   refreshTray(state.lang, state.activePercent, state.activeLabel);
 }
 
-async function resolveSecret(account: Account): Promise<string | null> {
+async function readStoredSecret(account: Account): Promise<string | null> {
   try {
     if (account.secretRef === DISCOVERED_CODEX) {
       const login = readCodexAuth(JSON.parse(readFileSync(join(home(), ".codex", "auth.json"), "utf8")));
       return login?.token ?? null;
     }
-    if (account.secretRef === DISCOVERED_CLAUDE) {
-      for (const relative of [join(".claude", ".credentials.json"), ".claude.json"]) {
-        try {
-          const login = readClaudeOauth(JSON.parse(readFileSync(join(home(), relative), "utf8")));
-          if (login?.token) return login.token;
-        } catch {
-          /* try the next known file */
-        }
-      }
-      return null;
-    }
+    if (account.secretRef === DISCOVERED_CLAUDE) return readCredentialsRaw(home());
   } catch {
     return null;
   }
   return secrets.get(account.secretRef);
+}
+
+async function resolveSecret(account: Account): Promise<string | null> {
+  const stored = await readStoredSecret(account);
+  if (!stored) return null;
+  if (account.provider === "claude" && account.authKind !== "api-key") return accessTokenFromSecret(stored);
+  return stored;
+}
+
+function storeOauthBlob(account: Account, stored: string, blob: NonNullable<ReturnType<typeof blobFromSecret>>): void {
+  if (account.secretRef.startsWith("discovered:")) return;
+  secrets.set(account.secretRef, stored);
+  account.expiresAt = blob.expiresAt;
+  account.email = blob.email ?? account.email;
+  account.lineage = lineageOf(blob.refreshToken) ?? account.lineage;
+  if (blob.accountUuid) account.externalId = blob.accountUuid;
 }
 
 async function startListening(): Promise<void> {
@@ -228,24 +290,44 @@ async function stopListening(): Promise<void> {
 }
 
 async function probeQuotas(): Promise<void> {
+  const now = Date.now();
+  for (const [id, quota] of quotaNotes) {
+    const released = percentAfterReset(quota.windows, now);
+    if (released.windows.length !== quota.windows.length) {
+      quotaNotes.set(id, { ...quota, windows: released.windows, percent: released.percent });
+      runtime.percentByAccount[id] = released.percent;
+    }
+  }
+  const previous = new Map<string, number | null>();
+  for (const account of config.accounts) previous.set(account.id, quotaNotes.get(account.id)?.percent ?? runtime.percentByAccount[account.id] ?? null);
   for (const account of config.accounts) {
     if (!account.enabled) continue;
-    const secret = await resolveSecret(account);
-    if (!secret) continue;
+    const stored = await readStoredSecret(account);
+    if (!stored) continue;
     try {
       if (account.provider === "claude" && account.authKind !== "api-key") {
-        const response = await fetch("https://api.anthropic.com/api/oauth/usage", {
-          headers: { authorization: `Bearer ${secret}` },
-          signal: AbortSignal.timeout(8000),
-        });
-        if (response.ok) {
-          const windows = windowsFromUsageJson(await response.json());
+        const blob = blobFromSecret(stored);
+        const owns = claudeCodeOwns(account.lineage ?? lineageOf(blob?.refreshToken), diskLineage());
+        const polled = await pollClaudeSubscription(stored, nodeHttp, owns, now);
+        if (polled.stored && polled.blob) storeOauthBlob(account, polled.stored, polled.blob);
+        if (polled.rotated) {
+          pushActivity({ at: new Date().toISOString(), key: "log.refreshed", vars: { label: account.label } });
+        }
+        if (polled.dead) {
+          quotaNotes.set(account.id, {
+            windows: quotaNotes.get(account.id)?.windows ?? [],
+            percent: quotaNotes.get(account.id)?.percent ?? null,
+            source: "provider",
+            note: "relogin",
+          });
+          pushActivity({ at: new Date().toISOString(), key: "log.oauthDead", vars: { label: account.label } });
+        } else if (polled.usageStatus === 200 && polled.usageBody) {
+          const windows = windowsFromUsageJson(JSON.parse(polled.usageBody) as unknown);
           const percent = worstPercent(windows);
-          if (percent != null) runtime.percentByAccount[account.id] = percent;
-          quotaNotes.set(account.id, { windows, percent, source: "provider" });
-          persistRuntime();
+          rememberQuota(account.id, windows, percent, "provider");
         }
       } else if (account.provider === "deepseek") {
+        const secret = accessTokenFromSecret(stored) ?? stored;
         const response = await fetch("https://api.deepseek.com/user/balance", {
           headers: { authorization: `Bearer ${secret}` },
           signal: AbortSignal.timeout(8000),
@@ -271,6 +353,31 @@ async function probeQuotas(): Promise<void> {
       /* a failed probe keeps the last ledger and header reading */
     }
   }
+  const alerts = evaluateAlerts(
+    config.accounts.map((account) => {
+      const quota = quotaNotes.get(account.id);
+      return {
+        id: account.id,
+        label: account.label,
+        enabled: account.enabled,
+        previousPercent: previous.get(account.id) ?? null,
+        percent: quota?.percent ?? runtime.percentByAccount[account.id] ?? null,
+        resetsAt: quota ? bindingReset(quota.windows) : undefined,
+      };
+    }),
+    config.switchThreshold,
+    alertSeen,
+    now,
+  );
+  alertSeen = alerts.seen;
+  const lang = config.lang ?? "en";
+  for (const alert of alerts.alerts) {
+    const key = alert.kind === "threshold" ? "notify.threshold" : alert.kind === "reset-soon" ? "notify.resetSoon" : "notify.poolFull";
+    notifyUser(translate(lang, "app.title"), translate(lang, key, alert.vars));
+    pushActivity({ at: new Date().toISOString(), key, vars: alert.vars });
+  }
+  persist();
+  persistRuntime();
   publish();
 }
 
@@ -528,7 +635,127 @@ function registerIpc(): void {
     flash = { text: translate(config.lang ?? "en", ok ? "proxy.restored" : "proxy.noBackup"), warn: !ok };
     publish();
   });
+  ipcMain.handle("pilot:setNotify", (_event, enabled: boolean) => {
+    config.notify = Boolean(enabled);
+    persist();
+    publish();
+  });
+  ipcMain.handle("pilot:startClaudeLogin", async () => {
+    pendingLogin = createPkce();
+    const url = buildAuthorizeUrl(pendingLogin);
+    await shell.openExternal(url);
+    flash = { text: translate(config.lang ?? "en", "oauth.opened") };
+    publish();
+    return { url };
+  });
+  ipcMain.handle("pilot:finishClaudeLogin", async (_event, pasted: string) => {
+    const login = pendingLogin;
+    if (!login) {
+      flash = { text: translate(config.lang ?? "en", "oauth.badCode"), warn: true };
+      publish();
+      return { ok: false };
+    }
+    const result = await exchangeClaudeCode(login, String(pasted ?? ""), nodeHttp);
+    pendingLogin = null;
+    if (!result.blob) {
+      flash = { text: translate(config.lang ?? "en", "oauth.badCode"), warn: true };
+      publish();
+      return { ok: false };
+    }
+    addManagedClaude(result.blob, result.blob.email || "Claude");
+    flash = { text: translate(config.lang ?? "en", "oauth.saved") };
+    persist();
+    publish();
+    void probeQuotas();
+    return { ok: true };
+  });
+  ipcMain.handle("pilot:importClaudeCredentials", (_event, raw: string) => {
+    const blob = blobFromSecret(String(raw ?? ""));
+    if (!blob?.refreshToken && !blob?.accessToken) {
+      flash = { text: translate(config.lang ?? "en", "oauth.badCode"), warn: true };
+      publish();
+      return { ok: false };
+    }
+    if (!blob) return { ok: false };
+    addManagedClaude(blob, blob.email || "Claude");
+    flash = { text: translate(config.lang ?? "en", "oauth.saved") };
+    persist();
+    publish();
+    void probeQuotas();
+    return { ok: true };
+  });
+  ipcMain.handle("pilot:syncClaudeAccount", (_event, id: string) => {
+    const account = config.accounts.find((item) => item.id === id && item.provider === "claude");
+    if (!account) return { ok: false };
+    void (async () => {
+      const stored = await readStoredSecret(account);
+      const blob = stored ? blobFromSecret(stored) : null;
+      if (!stored || !blob) {
+        flash = { text: translate(config.lang ?? "en", "oauth.badCode"), warn: true };
+        publish();
+        return;
+      }
+      absorbDisk();
+      const document = credentialsDocument(blob);
+      writeCredentialsFile(home(), document);
+      const plan = keychainPlan(process.platform, userInfo().username, document.trim());
+      if (plan) {
+        execFile(plan.command, plan.args, () => undefined);
+      }
+      account.lineage = lineageOf(blob.refreshToken) ?? account.lineage;
+      config.syncedAccountId = account.id;
+      flash = { text: translate(config.lang ?? "en", "oauth.swapped") };
+      persist();
+      publish();
+    })();
+    return { ok: true };
+  });
+  ipcMain.handle("pilot:restoreClaudeCredentials", () => {
+    const ok = restoreCredentialsFile(home());
+    if (ok) config.syncedAccountId = null;
+    flash = { text: translate(config.lang ?? "en", ok ? "oauth.restored" : "oauth.noBackup"), warn: !ok };
+    persist();
+    publish();
+  });
   ipcMain.handle("pilot:openMain", () => showMain());
+}
+
+function absorbDisk(): void {
+  const raw = readCredentialsRaw(home());
+  const captured = captureDisk(raw);
+  if (!raw || !captured.diskBlob || !captured.diskLineage) return;
+  const owner = config.accounts.find((account) => account.lineage && account.lineage === captured.diskLineage);
+  if (!owner || owner.secretRef.startsWith("discovered:")) return;
+  secrets.set(owner.secretRef, raw.endsWith("\n") ? raw : `${raw}\n`);
+  owner.expiresAt = captured.diskBlob.expiresAt ?? owner.expiresAt;
+  owner.email = captured.diskBlob.email ?? owner.email;
+}
+
+function addManagedClaude(blob: NonNullable<ReturnType<typeof blobFromSecret>>, label: string): void {
+  const lineage = lineageOf(blob.refreshToken);
+  const existing = lineage ? config.accounts.find((account) => account.lineage === lineage) : undefined;
+  if (existing && !existing.secretRef.startsWith("discovered:")) {
+    secrets.set(existing.secretRef, credentialsDocument(blob));
+    existing.expiresAt = blob.expiresAt;
+    existing.email = blob.email ?? existing.email;
+    existing.enabled = true;
+    return;
+  }
+  const id = randomUUID();
+  secrets.set(id, credentialsDocument(blob));
+  config.accounts.push({
+    id,
+    provider: "claude",
+    label: label.slice(0, 80),
+    enabled: true,
+    secretRef: id,
+    authKind: "oauth",
+    email: blob.email,
+    expiresAt: blob.expiresAt,
+    lineage,
+    externalId: blob.accountUuid,
+  });
+  config.providersEnabled.claude = true;
 }
 
 function importDiscovered(provider: ProviderId): void {
@@ -550,14 +777,20 @@ function importDiscovered(provider: ProviderId): void {
     });
     config.providersEnabled.codex = true;
   }
-  if (provider === "claude" && !config.accounts.some((account) => account.secretRef === DISCOVERED_CLAUDE)) {
+    if (provider === "claude" && !config.accounts.some((account) => account.secretRef === DISCOVERED_CLAUDE)) {
+    const raw = readCredentialsRaw(home());
+    const blob = raw ? blobFromSecret(raw) : null;
     config.accounts.push({
       id: randomUUID(),
       provider: "claude",
-      label: "Claude Code",
+      label: blob?.email || "Claude Code",
       enabled: true,
       secretRef: DISCOVERED_CLAUDE,
       authKind: "oauth",
+      email: blob?.email,
+      expiresAt: blob?.expiresAt,
+      lineage: lineageOf(blob?.refreshToken),
+      externalId: blob?.accountUuid,
     });
     config.providersEnabled.claude = true;
   }
@@ -582,6 +815,8 @@ if (!gotLock) {
     runtime.percentByAccount = stored.percentByAccount;
     for (const [id, quota] of Object.entries(stored.quotas)) quotaNotes.set(id, quota);
     activity.push(...stored.activity);
+    history = stored.history ?? [];
+    alertSeen = Object.fromEntries((stored.alertSeen ?? []).map((key) => [key, true as const]));
     ledger = loadLedger(ledgerPath);
     secrets = createSecretStore(join(dir, "secrets.bin"));
     persist();

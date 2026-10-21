@@ -19,6 +19,12 @@ const api = {
   importDiscovered: (provider) => ipcRenderer.invoke("pilot:importDiscovered", provider),
   applyClaude: () => ipcRenderer.invoke("pilot:applyClaude"),
   restoreClaude: () => ipcRenderer.invoke("pilot:restoreClaude"),
+  setNotify: (enabled) => ipcRenderer.invoke("pilot:setNotify", enabled),
+  startClaudeLogin: () => ipcRenderer.invoke("pilot:startClaudeLogin"),
+  finishClaudeLogin: (pasted) => ipcRenderer.invoke("pilot:finishClaudeLogin", pasted),
+  importClaudeCredentials: (raw) => ipcRenderer.invoke("pilot:importClaudeCredentials", raw),
+  syncClaudeAccount: (id) => ipcRenderer.invoke("pilot:syncClaudeAccount", id),
+  restoreClaudeCredentials: () => ipcRenderer.invoke("pilot:restoreClaudeCredentials"),
   openMain: () => ipcRenderer.invoke("pilot:openMain"),
   onState: (listener) => {
     const wrapped = (_event, state) => listener(state);

@@ -17,6 +17,8 @@ describe("runtime file", () => {
         "acc-1": { windows: [{ label: "5h", percent: 42 }], percent: 42, source: "headers" },
       },
       activity: [{ at: "2026-10-21T00:00:00Z", key: "log.request", vars: { requested: "haiku", target: "haiku", provider: "claude", account: "work" } }],
+      history: [],
+      alertSeen: [],
     });
     const raw = readFileSync(path, "utf8");
     assert.equal(raw.includes("sk-"), false);

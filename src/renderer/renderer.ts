@@ -1,4 +1,5 @@
 import { translate, type I18nKey } from "../core/i18n.js";
+import { formatCountdown } from "../core/monitor.js";
 import { PROVIDER_IDS, type Lang, type ProviderId, type QuotaWindow } from "../core/types.js";
 
 interface PublicAccount {
@@ -16,6 +17,12 @@ interface PublicAccount {
   costUsd: number;
   source: "provider" | "headers" | "local-estimate" | "none";
   note?: string;
+  authKind: "api-key" | "oauth" | "discovered";
+  email?: string;
+  synced?: boolean;
+  ownedByClaudeCode?: boolean;
+  resetsAt?: string;
+  history?: Array<number | null>;
 }
 
 interface Discovery {
@@ -49,6 +56,7 @@ interface PublicState {
   port: number;
   widgetEnabled: boolean;
   launchAtLogin: boolean;
+  notify: boolean;
   encryptionWarning: boolean;
   providersEnabled: Record<ProviderId, boolean>;
   accounts: PublicAccount[];
@@ -79,6 +87,12 @@ interface PilotBridge {
   importDiscovered: (provider: ProviderId) => Promise<void>;
   applyClaude: () => Promise<void>;
   restoreClaude: () => Promise<void>;
+  setNotify: (enabled: boolean) => Promise<void>;
+  startClaudeLogin: () => Promise<{ url: string }>;
+  finishClaudeLogin: (pasted: string) => Promise<{ ok: boolean }>;
+  importClaudeCredentials: (raw: string) => Promise<{ ok: boolean }>;
+  syncClaudeAccount: (id: string) => Promise<{ ok: boolean }>;
+  restoreClaudeCredentials: () => Promise<void>;
   openMain: () => Promise<void>;
   onState: (listener: (state: PublicState) => void) => () => void;
 }
@@ -179,7 +193,10 @@ function renderAccounts(): void {
     for (const item of account.windows) {
       const tag = document.createElement("span");
       tag.className = "tag";
-      tag.textContent = `${t(`window.${item.label}`)} ${item.percent}%`;
+      const name = item.name ? `${item.name} ` : "";
+      const countdown = item.resetsAt ? formatCountdown(item.resetsAt) : null;
+      const reset = countdown ? ` · ${t("window.reset", { when: countdown })}` : "";
+      tag.textContent = `${name}${t(`window.${item.label}`)} ${item.percent}%${reset}`;
       windows.append(tag);
     }
     if (account.active) {
@@ -198,16 +215,64 @@ function renderAccounts(): void {
     remove.type = "button";
     remove.textContent = t("accounts.remove");
     remove.addEventListener("click", () => void window.pilot.removeAccount(account.id));
-    card.append(head, meta, bar, windows, cache);
-    if (account.note) {
+    card.append(head, meta, bar, sparkline(account.history ?? []), windows, cache);
+    if (account.email) {
+      const email = document.createElement("p");
+      email.className = "hint";
+      email.textContent = account.email;
+      card.append(email);
+    }
+    if (account.note === "relogin") {
+      const note = document.createElement("p");
+      note.className = "hint";
+      note.textContent = t("oauth.dead");
+      card.append(note);
+    } else if (account.note) {
       const note = document.createElement("p");
       note.className = "hint";
       note.textContent = account.note;
       card.append(note);
     }
+    if (account.ownedByClaudeCode) {
+      const owned = document.createElement("p");
+      owned.className = "hint";
+      owned.textContent = t("oauth.owned");
+      card.append(owned);
+    }
+    if (account.provider === "claude" && account.authKind !== "api-key") {
+      const sync = document.createElement("button");
+      sync.type = "button";
+      sync.textContent = account.synced ? t("oauth.synced") : t("oauth.sync");
+      sync.disabled = Boolean(account.synced);
+      sync.addEventListener("click", () => void window.pilot.syncClaudeAccount(account.id));
+      card.append(sync);
+    }
     card.append(remove);
     root.append(card);
   }
+}
+
+function sparkline(points: Array<number | null>): SVGSVGElement {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 120 28");
+  svg.setAttribute("class", "spark");
+  const values = points.filter((point): point is number => point != null);
+  if (values.length < 2) return svg;
+  const step = 120 / (values.length - 1);
+  const d = values
+    .map((value, index) => {
+      const x = (index * step).toFixed(1);
+      const y = (26 - (Math.max(0, Math.min(100, value)) / 100) * 24).toFixed(1);
+      return `${index === 0 ? "M" : "L"}${x} ${y}`;
+    })
+    .join(" ");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", d);
+  path.setAttribute("fill", "none");
+  path.setAttribute("stroke", "currentColor");
+  path.setAttribute("stroke-width", "1.5");
+  svg.append(path);
+  return svg;
 }
 
 function renderProviders(): void {
@@ -351,6 +416,8 @@ function renderProxy(): void {
   if (launch) launch.checked = state.launchAtLogin;
   const widget = document.querySelector<HTMLInputElement>("#widget");
   if (widget) widget.checked = state.widgetEnabled;
+  const notify = document.querySelector<HTMLInputElement>("#notify");
+  if (notify) notify.checked = state.notify;
   const banner = document.querySelector("#banner");
   if (banner) {
     const parts = [];
@@ -441,6 +508,27 @@ function bind(): void {
   });
   document.querySelector("#widget")?.addEventListener("change", (event) => {
     void window.pilot.setWidget((event.target as HTMLInputElement).checked);
+  });
+  document.querySelector("#notify")?.addEventListener("change", (event) => {
+    void window.pilot.setNotify((event.target as HTMLInputElement).checked);
+  });
+  document.querySelector("#oauth-open")?.addEventListener("click", () => void window.pilot.startClaudeLogin());
+  document.querySelector("#oauth-restore")?.addEventListener("click", () => void window.pilot.restoreClaudeCredentials());
+  document.querySelector("#oauth-finish")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const pasted = document.querySelector<HTMLInputElement>("#oauth-code")?.value ?? "";
+    void window.pilot.finishClaudeLogin(pasted).then(() => {
+      const input = document.querySelector<HTMLInputElement>("#oauth-code");
+      if (input) input.value = "";
+    });
+  });
+  document.querySelector("#oauth-import")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const raw = document.querySelector<HTMLTextAreaElement>("#oauth-json")?.value ?? "";
+    void window.pilot.importClaudeCredentials(raw).then(() => {
+      const input = document.querySelector<HTMLTextAreaElement>("#oauth-json");
+      if (input) input.value = "";
+    });
   });
   document.querySelector("#add-account")?.addEventListener("submit", (event) => {
     event.preventDefault();
