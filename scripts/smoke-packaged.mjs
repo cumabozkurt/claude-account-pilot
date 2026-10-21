@@ -1,5 +1,5 @@
 import { execFileSync, spawn } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -69,6 +69,26 @@ function run(command, args, env, timeoutMs = 240000) {
   });
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** NSIS copies the uninstaller to %TEMP% and the first process exits before files are gone. */
+async function waitUntilGone(path, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (existsSync(path) && Date.now() < deadline) await sleep(1000);
+  return !existsSync(path);
+}
+
+function executableFile(path) {
+  try {
+    const stat = statSync(path);
+    return stat.isFile() && (stat.mode & 0o111) !== 0;
+  } catch {
+    return false;
+  }
+}
+
 function launch(bin, args, env) {
   if (process.platform === "linux") {
     return run("xvfb-run", ["-a", "--server-args=-screen 0 1280x800x24", bin, ...args], env);
@@ -129,13 +149,15 @@ async function main() {
     const deb = findArtifact(/\.deb$/);
     execFileSync("sudo", ["apt-get", "install", "-y", deb], { stdio: "inherit" });
     const listedDeb = execFileSync("dpkg", ["-L", "claude-account-pilot"], { encoding: "utf8" });
-    const bin = listedDeb
+    const candidates = listedDeb
       .split("\n")
-      .find((line) => line.endsWith("/claude-account-pilot"));
+      .map((line) => line.trim())
+      .filter((line) => line.endsWith("/claude-account-pilot") && !line.includes("/share/"));
+    const bin = candidates.find((line) => line === "/usr/bin/claude-account-pilot") ?? candidates.find((line) => executableFile(line));
     if (!bin) throw new Error(`deb binary not found\n${listedDeb}`);
     await once(bin, ["--no-sandbox"], "en", "linux-deb", false);
     execFileSync("sudo", ["apt-get", "remove", "-y", "claude-account-pilot"], { stdio: "inherit" });
-    if (existsSync(bin)) throw new Error(`uninstall left ${bin}`);
+    if (existsSync(bin) || existsSync("/opt/Claude Account Pilot")) throw new Error(`uninstall left ${bin}`);
     console.log("linux deb removed");
     return;
   }
@@ -168,8 +190,9 @@ async function main() {
     await once(exe, [], "en", "win-setup", true);
     const uninstaller = join(dest, "Uninstall Claude Account Pilot.exe");
     if (!existsSync(uninstaller)) throw new Error("uninstaller missing");
-    await run(uninstaller, ["/S"], process.env);
-    if (existsSync(exe)) throw new Error("uninstall left the executable");
+    await run(uninstaller, ["/S"], process.env, 180000);
+    const removed = await waitUntilGone(exe, 90_000);
+    if (!removed) throw new Error("uninstall left the executable");
     console.log("windows setup removed");
     return;
   }
