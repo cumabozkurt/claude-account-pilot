@@ -70,6 +70,9 @@ export function pickAccount(
     };
   }
 
+  // A null percent is usable, so it is chosen above. This sort runs only when every
+  // enabled account is already at the threshold. Unknown is treated as the lowest
+  // number so a probe that has not landed yet is preferred over a fuller window.
   const least = [...enabled].sort(
     (a, b) => (a.percent ?? 0) - (b.percent ?? 0) || a.id.localeCompare(b.id),
   )[0];

@@ -1,5 +1,14 @@
 # Değişiklik günlüğü
 
+## [1.2.0] - 2026-10-21
+
+- Vekil, dönüşüm, ayar yazıcı, belirteç yenileme ve güncelleyici gözden geçirildi. Vekil artık tek bir deneme yerine yedek zincirin tamamını dener (eksik sır, 429, 5xx veya kopan bağlantı). İkinci bir başlatma, zaten bağlanmış sunucuyu silmez.
+- `anthropic-beta` ve hesap kimliği satır sonu içerirse reddedilir; istemci yukarı akışa başlık ekleyemez. Vekil yine yalnız `127.0.0.1` üzerinde dinler.
+- Claude ayarları sembolik bağ veya sabit bağ üzerinden yazılmaz; yol ev dizininin dışına çözülürse de yazılmaz. JSON olmayan bir yapılandırma, varsayılanlar kaydedilmeden `config.json.broken` olarak kenara alınır.
+- Codex, Claude veya Google belirtecinin yenilenmesi tek uçuştur; üst üste iki istek aynı yenileme belirtecini iki kez döndüremez.
+- Güncelleme indirmesi yönlendirmeleri yalnız GitHub yayın konaklarında izler. macOS değişimi, çalışan ikiliyi içeren `.app` paketini hedefler. Windows değiştirme betiği tırnak veya kabuk karakteri içeren yolları reddeder.
+- Paketlenmiş derlemeler CI'de Linux, macOS ve Windows üzerinde başlatılır. Duman sınaması vekili, tepsiyi, `settings.json` geri yüklemeyi ve sahte bir yayın belgesini kontrol eder, sonra kurduğunu kaldırır.
+
 ## [1.1.0] - 2026-10-21
 
 - İlk açılış bu bilgisayardaki oturumları okur: Claude Code kimlik dosyası ve macOS anahtarlık kaydı, Codex, OpenCode, Gemini, Antigravity, canlı bir Claude Desktop oturum dosyası ve ortamdan ya da `~/.claude/settings.json` içinden API anahtarları. Silinen bir oturum yeniden alınmaz.

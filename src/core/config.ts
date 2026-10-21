@@ -1,9 +1,35 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { defaultConfig, PROVIDER_IDS, type AppConfig, type ProviderId } from "./types.js";
 
 function isProvider(value: unknown): value is ProviderId {
   return typeof value === "string" && (PROVIDER_IDS as string[]).includes(value);
+}
+
+/**
+ * A broken config is moved aside before defaults are written over it.
+ * Missing files are left alone. A readable JSON file is "ok".
+ */
+export function quarantineConfig(path: string): "missing" | "ok" | "quarantined" {
+  let raw: string;
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch (error) {
+    const code = error && typeof error === "object" && "code" in error ? (error as { code?: string }).code : "";
+    if (code === "ENOENT") return "missing";
+    return "quarantined";
+  }
+  try {
+    JSON.parse(raw);
+    return "ok";
+  } catch {
+    try {
+      renameSync(path, `${path}.broken`);
+    } catch {
+      /* the next save still replaces the unreadable file */
+    }
+    return "quarantined";
+  }
 }
 
 /** Load config from disk. Missing or broken files fall back to defaults. Secrets are never in this file. */

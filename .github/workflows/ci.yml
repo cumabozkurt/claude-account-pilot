@@ -45,6 +45,22 @@ jobs:
         run: npx electron-builder ${{ matrix.builder }} --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - name: Desktop libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libgtk-3-0 libnotify4 libnss3 libxss1 libgbm1 libayatana-appindicator3-1
+          sudo apt-get install -y libasound2t64 || sudo apt-get install -y libasound2
+      - name: Packaged smoke
+        run: node scripts/smoke-packaged.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-${{ matrix.os }}
+          path: |
+            smoke-shots/**
+            smoke-reports/**
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
           name: claude-account-pilot-${{ matrix.os }}

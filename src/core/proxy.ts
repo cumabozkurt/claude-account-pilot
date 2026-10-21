@@ -104,12 +104,32 @@ async function readBody(req: IncomingMessage): Promise<Buffer> {
 }
 
 function writeJson(res: ServerResponse, status: number, body: unknown): void {
+  if (res.destroyed || res.writableEnded || res.headersSent) return;
   const payload = typeof body === "string" ? body : JSON.stringify(body);
   res.writeHead(status, {
     "content-type": "application/json; charset=utf-8",
     "anthropic-version": "2023-06-01",
   });
   res.end(payload);
+}
+
+/** Drop CR/LF so a client header cannot inject extra upstream headers. */
+export function safeHeader(value: string | string[] | undefined): string | undefined {
+  const raw = Array.isArray(value) ? value.join(", ") : value;
+  if (!raw) return undefined;
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed.length > 512 || /[\r\n\0]/.test(trimmed)) return undefined;
+  return trimmed;
+}
+
+function discardUpstream(result: UpstreamResult | undefined): void {
+  const stream = result?.stream as { destroy?: () => void; return?: () => Promise<unknown> } | undefined;
+  if (!stream) return;
+  if (typeof stream.destroy === "function") {
+    stream.destroy();
+    return;
+  }
+  if (typeof stream.return === "function") void stream.return();
 }
 
 export async function startProxy(deps: ProxyDeps, port = 0): Promise<RunningProxy> {
@@ -199,9 +219,28 @@ async function handleMessages(
   }
 
   const avoid: string[] = [];
-  const send = async (current: Extract<typeof plan, { kind: "forward" }>, allowFailover: boolean): Promise<void> => {
+  const controllers: AbortController[] = [];
+  res.on("close", () => {
+    for (const controller of controllers) controller.abort();
+  });
+  const send = async (current: Extract<typeof plan, { kind: "forward" }>, attemptsLeft: number): Promise<void> => {
+    const failOver = async (): Promise<boolean> => {
+      if (attemptsLeft <= 0 || res.destroyed || res.writableEnded) return false;
+      avoid.push(current.account.id);
+      state = deps.getState();
+      const retry = planRequest(state, requested, Date.now(), avoid);
+      if (retry.kind !== "forward" || retry.account.id === current.account.id) return false;
+      deps.onActivity({
+        at: new Date().toISOString(),
+        key: "log.failover",
+        vars: { account: current.account.label },
+      });
+      await send({ ...retry, switched: true, reason: "next-available" }, attemptsLeft - 1);
+      return true;
+    };
     const secret = await deps.getSecret(current.account);
-    if (!secret) {
+    if (!secret || /[\r\n\0]/.test(secret)) {
+      if (await failOver()) return;
       const lang = deps.getState().config.lang ?? "en";
       writeJson(
         res,
@@ -245,14 +284,15 @@ async function handleMessages(
       headers.authorization = `Bearer ${secret}`;
     }
     if (current.provider === "codex") {
-      if (current.account.externalId) headers["chatgpt-account-id"] = current.account.externalId;
+      const accountId = safeHeader(current.account.externalId);
+      if (accountId) headers["chatgpt-account-id"] = accountId;
       headers.originator = CODEX_OAUTH.originator;
       headers.version = CODEX_OAUTH.version;
       headers["openai-beta"] = "responses=experimental";
       headers["user-agent"] = `${CODEX_OAUTH.originator}/${CODEX_OAUTH.version}`;
     }
-    const beta = req.headers["anthropic-beta"];
-    if (typeof beta === "string" && current.protocol === "anthropic") headers["anthropic-beta"] = beta;
+    const beta = safeHeader(req.headers["anthropic-beta"]);
+    if (beta && current.protocol === "anthropic") headers["anthropic-beta"] = beta;
 
     let upstreamBody: Record<string, unknown> = body;
     if (current.protocol === "openai-chat") upstreamBody = anthropicToChatCompletions(body, current.model);
@@ -263,8 +303,8 @@ async function handleMessages(
     if (current.protocol === "cloudcode") upstreamBody = anthropicToCloudCode(body, current.model, current.account.externalId);
 
     const controller = new AbortController();
-    res.on("close", () => controller.abort());
-    let result: UpstreamResult;
+    controllers.push(controller);
+    let result: UpstreamResult | undefined;
     try {
       result = await upstream({
         url: messagesUrl(spec, Boolean(body.stream)),
@@ -274,14 +314,8 @@ async function handleMessages(
         signal: controller.signal,
       });
     } catch (error) {
-      if (allowFailover) {
-        avoid.push(current.account.id);
-        const retry = planRequest(deps.getState(), requested, Date.now(), avoid);
-        if (retry.kind === "forward" && retry.account.id !== current.account.id) {
-          await send({ ...retry, switched: true, reason: "next-available" }, false);
-          return;
-        }
-      }
+      if (controller.signal.aborted || res.destroyed || res.writableEnded) return;
+      if (await failOver()) return;
       const message = error instanceof Error ? error.message : "upstream failed";
       writeJson(res, 502, JSON.parse(anthropicError(message)));
       return;
@@ -291,37 +325,14 @@ async function handleMessages(
     const percent = worstPercent(windows);
     if (percent != null) deps.onQuota(current.account.id, percent, windows);
 
-    const nextPlan = () => {
-      avoid.push(current.account.id);
-      state = deps.getState();
-      return planRequest(state, requested, Date.now(), avoid);
-    };
-    const shortLimit = result.status === 429 && (percent == null || percent < state.config.switchThreshold);
-    if (shortLimit) {
-      deps.onCooldown(current.account.id, Date.now() + 60_000);
-      if (allowFailover) {
-        const retry = nextPlan();
-        if (retry.kind === "forward" && retry.account.id !== current.account.id) {
-          deps.onActivity({
-            at: new Date().toISOString(),
-            key: "log.failover",
-            vars: { account: current.account.label },
-          });
-          await send({ ...retry, switched: true, reason: "next-available" }, false);
-          return;
-        }
-      }
-    }
-
-    if ((result.status === 429 || result.status >= 500) && allowFailover) {
+    if (result.status === 429 || result.status >= 500) {
       if (result.status === 429 && percent != null && percent >= state.config.switchThreshold) {
         deps.onQuota(current.account.id, 100, windows.length ? windows : [{ label: "5h", percent: 100 }]);
+      } else if (result.status === 429) {
+        deps.onCooldown(current.account.id, Date.now() + 60_000);
       }
-      const retry = nextPlan();
-      if (retry.kind === "forward" && retry.account.id !== current.account.id) {
-        await send({ ...retry, switched: true, reason: "next-available" }, false);
-        return;
-      }
+      discardUpstream(result);
+      if (await failOver()) return;
     }
 
     if (current.protocol === "anthropic") {
@@ -359,7 +370,7 @@ async function handleMessages(
     writeJson(res, 200, message);
   };
 
-  await send(plan, true);
+  await send(plan, 5);
 }
 
 async function pipeAnthropic(

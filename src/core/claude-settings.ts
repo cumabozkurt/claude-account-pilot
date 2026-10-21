@@ -1,5 +1,5 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { join, sep } from "node:path";
 
 const MANAGED_URL = "ANTHROPIC_BASE_URL";
 const MANAGED_KEY = "ANTHROPIC_API_KEY";
@@ -11,6 +11,34 @@ export function claudeSettingsPath(home: string): string {
 
 export function claudeBackupPath(home: string): string {
   return join(home, ".claude", "settings.claude-account-pilot.bak.json");
+}
+
+function isMissing(error: unknown): boolean {
+  return Boolean(error && typeof error === "object" && "code" in error && (error as { code?: string }).code === "ENOENT");
+}
+
+/** Refuse a symlink, and refuse a path that resolves outside this home directory. */
+function assertContained(home: string, path: string): void {
+  const homeReal = realpathSync(home);
+  const prefix = homeReal.endsWith(sep) ? homeReal : homeReal + sep;
+  let stat;
+  try {
+    stat = lstatSync(path);
+  } catch (error) {
+    if (isMissing(error)) return;
+    throw error;
+  }
+  if (stat.isSymbolicLink()) throw new Error("refusing to follow a symlink in ~/.claude");
+  if (!stat.isDirectory() && stat.nlink > 1) throw new Error("refusing to write a hard-linked settings file");
+  const real = realpathSync(path);
+  if (real !== homeReal && !real.startsWith(prefix)) throw new Error("refusing a settings path outside the home directory");
+}
+
+function prepareClaudeDir(home: string): void {
+  const dir = join(home, ".claude");
+  assertContained(home, dir);
+  mkdirSync(dir, { recursive: true });
+  assertContained(home, dir);
 }
 
 function readJson(path: string): Record<string, unknown> {
@@ -31,7 +59,9 @@ function readJson(path: string): Record<string, unknown> {
 export function applyClaudeBaseUrl(home: string, baseUrl: string): { settingsPath: string; backupPath: string } {
   const settingsPath = claudeSettingsPath(home);
   const backupPath = claudeBackupPath(home);
-  mkdirSync(join(home, ".claude"), { recursive: true });
+  prepareClaudeDir(home);
+  assertContained(home, settingsPath);
+  assertContained(home, backupPath);
   if (existsSync(settingsPath) && !existsSync(backupPath)) {
     copyFileSync(settingsPath, backupPath);
   }
@@ -51,8 +81,11 @@ export function applyClaudeBaseUrl(home: string, baseUrl: string): { settingsPat
 
 export function restoreClaudeSettings(home: string): boolean {
   const backupPath = claudeBackupPath(home);
+  const settingsPath = claudeSettingsPath(home);
   if (!existsSync(backupPath)) return false;
-  copyFileSync(backupPath, claudeSettingsPath(home));
+  assertContained(home, backupPath);
+  assertContained(home, settingsPath);
+  copyFileSync(backupPath, settingsPath);
   return true;
 }
 

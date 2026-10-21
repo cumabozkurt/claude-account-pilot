@@ -1,15 +1,15 @@
 import { app, BrowserWindow, Menu, Notification, Tray, dialog, ipcMain, nativeImage, shell, type NativeImage } from "electron";
 import { execFile, execFileSync, spawn } from "node:child_process";
-import { chmodSync, copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir, tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
-import { installKind, looksLikeInstaller, pickUpdateAsset } from "../core/auto-update.js";
+import { fetchReleaseBytes, installKind, looksLikeInstaller, macAppBundle, pickUpdateAsset, windowsSwapScript, type InstallKind } from "../core/auto-update.js";
 import { applyAutomaticSetup } from "../core/bootstrap.js";
 import { applyClaudeBaseUrl, claudeEnvSnippet, claudeSettingsNeedUpdate, restoreClaudeSettings } from "../core/claude-settings.js";
-import { loadConfig, saveConfig } from "../core/config.js";
+import { loadConfig, quarantineConfig, saveConfig } from "../core/config.js";
 import { CLAUDE_KEYCHAIN_SERVICE, captureDisk, claudeCodeOwns, keychainPlan, readCredentialsRaw, restoreCredentialsFile, writeCredentialsFile } from "../core/credential-swap.js";
 import { DISCOVERED_CLAUDE, DISCOVERED_CODEX } from "../core/credentials.js";
 import { buildExport } from "../core/export-data.js";
@@ -64,6 +64,7 @@ import {
   type QuotaWindow,
   defaultConfig,
 } from "../core/types.js";
+import { singleFlight } from "../core/single-flight.js";
 import { createSecretStore, type SecretStore } from "./secrets.js";
 
 const require = createRequire(import.meta.url);
@@ -95,6 +96,15 @@ let alertSeen: Record<string, true> = {};
 let pendingLogin: PkceLogin | null = null;
 let latestDiscoveries = discoveriesFromScan({ accounts: [], secretValues: {}, googleClient: null, notes: [] });
 let expectProxyClose = false;
+const refreshFlight = singleFlight();
+
+function isolatedSession(): boolean {
+  return process.env.PILOT_SMOKE === "1" || process.env.PILOT_SELFTEST === "1";
+}
+
+function selfTestSession(): boolean {
+  return process.env.PILOT_SELFTEST === "1";
+}
 let healTimer: NodeJS.Timeout | null = null;
 let flash: { text: string; warn?: boolean } | null = null;
 
@@ -115,6 +125,8 @@ function googleClient(): { clientId: string; clientSecret: string } {
 }
 
 function home(): string {
+  const override = process.env.PILOT_HOME?.trim();
+  if (override) return override;
   return app.getPath("home") || homedir();
 }
 
@@ -288,23 +300,25 @@ function publish(): void {
 async function readStoredSecret(account: Account): Promise<string | null> {
   try {
     if (account.secretRef === DISCOVERED_CODEX) {
-      const path = join(home(), ".codex", "auth.json");
-      const raw = JSON.parse(readFileSync(path, "utf8")) as unknown;
-      let tokens = parseCodexTokens(raw);
-      if (tokens && codexNeedsRefresh(tokens)) {
-        const request = codexRefreshRequest(tokens);
-        if (request) {
-          const response = await nodeHttp(request);
-          const refreshed = applyCodexRefresh(tokens, response.status, response.body);
-          if (refreshed.tokens) {
-            tokens = refreshed.tokens;
-            writeFileSync(path, `${JSON.stringify(mergeCodexTokens(raw, tokens), null, 2)}\n`, { mode: 0o600 });
-            pushActivity({ at: new Date().toISOString(), key: "log.refreshed", vars: { label: account.label } });
+      return await refreshFlight(account.secretRef, async () => {
+        const path = join(home(), ".codex", "auth.json");
+        const raw = JSON.parse(readFileSync(path, "utf8")) as unknown;
+        let tokens = parseCodexTokens(raw);
+        if (tokens && codexNeedsRefresh(tokens)) {
+          const request = codexRefreshRequest(tokens);
+          if (request) {
+            const response = await nodeHttp(request);
+            const refreshed = applyCodexRefresh(tokens, response.status, response.body);
+            if (refreshed.tokens) {
+              tokens = refreshed.tokens;
+              writeFileSync(path, `${JSON.stringify(mergeCodexTokens(raw, tokens), null, 2)}\n`, { mode: 0o600 });
+              pushActivity({ at: new Date().toISOString(), key: "log.refreshed", vars: { label: account.label } });
+            }
           }
         }
-      }
-      if (tokens?.accountId) account.externalId = tokens.accountId;
-      return tokens?.accessToken ?? null;
+        if (tokens?.accountId) account.externalId = tokens.accountId;
+        return tokens?.accessToken ?? null;
+      });
     }
     if (account.secretRef === DISCOVERED_CLAUDE || account.secretRef === "discovered:claude-keychain") {
       return account.secretRef === DISCOVERED_CLAUDE ? readCredentialsRaw(home()) : readKeychainClaude();
@@ -347,22 +361,25 @@ async function readStoredSecret(account: Account): Promise<string | null> {
   const tokens = parseGoogleTokens(parsed);
   if (!tokens) return stored;
   if (tokens.refreshToken && googleNeedsRefresh(tokens)) {
-    const request = googleRefreshRequest(tokens, googleClient());
-    if (request) {
-      try {
-        const response = await nodeHttp(request);
-        const refreshed = applyGoogleToken(tokens, response.status, response.body);
-        if (refreshed.tokens) {
-          secrets.set(account.secretRef, googleTokensDocument(refreshed.tokens));
-          account.expiresAt = refreshed.tokens.expiresAt;
-          account.email = refreshed.tokens.email ?? account.email;
-          if (refreshed.tokens.projectId) account.externalId = refreshed.tokens.projectId;
-          return refreshed.tokens.accessToken;
+    return refreshFlight(`google:${account.secretRef}`, async () => {
+      const request = googleRefreshRequest(tokens, googleClient());
+      if (request) {
+        try {
+          const response = await nodeHttp(request);
+          const refreshed = applyGoogleToken(tokens, response.status, response.body);
+          if (refreshed.tokens) {
+            secrets.set(account.secretRef, googleTokensDocument(refreshed.tokens));
+            account.expiresAt = refreshed.tokens.expiresAt;
+            account.email = refreshed.tokens.email ?? account.email;
+            if (refreshed.tokens.projectId) account.externalId = refreshed.tokens.projectId;
+            return refreshed.tokens.accessToken;
+          }
+        } catch {
+          return tokens.accessToken;
         }
-      } catch {
-        return tokens.accessToken;
       }
-    }
+      return tokens.accessToken;
+    });
   }
   return tokens.accessToken;
 }
@@ -385,8 +402,11 @@ function storeOauthBlob(account: Account, stored: string, blob: NonNullable<Retu
 
 async function startListening(): Promise<void> {
   if (proxy || !config.proxyEnabled) return;
-  try {
-    proxy = await startProxy(
+  await refreshFlight("proxy-listen", async () => {
+    if (proxy || !config.proxyEnabled) return;
+    let started: RunningProxy | null = null;
+    try {
+      started = await startProxy(
       {
         getState: () => runtime,
         getSecret: resolveSecret,
@@ -426,21 +446,28 @@ async function startListening(): Promise<void> {
       },
       config.proxyPort,
     );
-    if (proxy.port !== config.proxyPort) {
-      config.proxyPort = proxy.port;
-      persist();
-    }
-    const server = proxy.server;
-    server.on("close", () => {
-      if (proxy?.server === server) proxy = null;
-      if (!expectProxyClose && !quitting && config.proxyEnabled) {
-        setTimeout(() => void startListening(), 1000);
+      if (quitting || !config.proxyEnabled) {
+        await started.close().catch(() => undefined);
+        return;
       }
-    });
-  } catch (error) {
-    proxy = null;
-    flash = { text: error instanceof Error ? error.message : "proxy", warn: true };
-  }
+      proxy = started;
+      if (proxy.port !== config.proxyPort) {
+        config.proxyPort = proxy.port;
+        persist();
+      }
+      const server = started.server;
+      server.on("close", () => {
+        if (proxy?.server === server) proxy = null;
+        if (!expectProxyClose && !quitting && config.proxyEnabled) {
+          setTimeout(() => void startListening(), 1000);
+        }
+      });
+    } catch (error) {
+      if (started) await started.close().catch(() => undefined);
+      if (proxy === started) proxy = null;
+      flash = { text: error instanceof Error ? error.message : "proxy", warn: true };
+    }
+  });
 }
 
 async function stopListening(): Promise<void> {
@@ -473,7 +500,7 @@ async function probeQuotas(): Promise<void> {
       if (account.provider === "claude" && account.authKind !== "api-key") {
         const blob = blobFromSecret(stored);
         const owns = claudeCodeOwns(account.lineage ?? lineageOf(blob?.refreshToken), diskLineage());
-        const polled = await pollClaudeSubscription(stored, nodeHttp, owns, now);
+        const polled = await refreshFlight(`claude:${account.secretRef}`, () => pollClaudeSubscription(stored, nodeHttp, owns, now));
         if (polled.stored && polled.blob) storeOauthBlob(account, polled.stored, polled.blob);
         if (polled.rotated) {
           pushActivity({ at: new Date().toISOString(), key: "log.refreshed", vars: { label: account.label } });
@@ -594,6 +621,91 @@ function showMain(): void {
   mainWindow?.focus();
 }
 
+async function runSelfTest(): Promise<number> {
+  const reportPath = process.env.PILOT_REPORT;
+  const baseUrl = `http://127.0.0.1:${proxy?.port ?? config.proxyPort}`;
+  const homeDir = home();
+  let healthOk = false;
+  let detail = "";
+  try {
+    const response = await fetch(`${baseUrl}/health`, { signal: AbortSignal.timeout(4000) });
+    const body = (await response.json()) as { ok?: boolean; proxy?: boolean };
+    healthOk = response.ok && body.ok === true && body.proxy === true;
+  } catch (error) {
+    detail = error instanceof Error ? error.message : "health";
+  }
+  let settingsWritten = false;
+  try {
+    settingsWritten = !claudeSettingsNeedUpdate(homeDir, baseUrl);
+  } catch (error) {
+    detail = error instanceof Error ? error.message : detail;
+  }
+  const configExists = Boolean(configPath) && existsSync(configPath);
+  let updateName: string | null = null;
+  let evilRejected = true;
+  let detectedKind: InstallKind | null = null;
+  const fakePath = process.env.PILOT_FAKE_RELEASE;
+  if (fakePath) {
+    try {
+      const payload = JSON.parse(readFileSync(fakePath, "utf8")) as {
+        tag_name?: string;
+        assets?: Array<{ name?: string; browser_download_url?: string }>;
+      };
+      const version = String(payload.tag_name ?? "").replace(/^v/, "");
+      detectedKind = installKind({
+        platform: process.platform,
+        arch: process.arch,
+        packaged: app.isPackaged,
+        appImage: process.env.APPIMAGE,
+        portable: Boolean(process.env.PORTABLE_EXECUTABLE_FILE),
+      });
+      const assets = payload.assets ?? [];
+      const picked = pickUpdateAsset(version, detectedKind, process.arch, assets);
+      updateName = picked?.name ?? null;
+      if (picked) {
+        evilRejected =
+          pickUpdateAsset(version, detectedKind, process.arch, [
+            { name: picked.name, browser_download_url: "https://evil.example/payload" },
+          ]) === null;
+      }
+    } catch (error) {
+      detail = error instanceof Error ? error.message : detail;
+      evilRejected = false;
+    }
+  }
+  let restored = false;
+  try {
+    restored = restoreClaudeSettings(homeDir);
+  } catch {
+    restored = false;
+  }
+  const forced = process.env.PILOT_LANG;
+  const langOk = forced === "tr" || forced === "en" ? config.lang === forced : true;
+  const requireKind = process.env.PILOT_REQUIRE_INSTALL_KIND === "1";
+  const updateOk = requireKind || detectedKind ? Boolean(detectedKind && updateName && evilRejected) : evilRejected;
+  const ok = healthOk && settingsWritten && configExists && Boolean(tray) && restored && updateOk && langOk;
+  const report = {
+    ok,
+    healthOk,
+    detail,
+    settingsWritten,
+    configExists,
+    tray: Boolean(tray),
+    restored,
+    installKind: detectedKind,
+    updateName,
+    evilRejected,
+    lang: config.lang,
+    port: proxy?.port ?? null,
+    packaged: app.isPackaged,
+    platform: process.platform,
+    arch: process.arch,
+    home: homeDir,
+  };
+  if (reportPath) writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
+  return ok ? 0 : 1;
+}
+
 function createMainWindow(visible = true): void {
   mainWindow = new BrowserWindow({
     width: 980,
@@ -615,12 +727,20 @@ function createMainWindow(visible = true): void {
   void mainWindow.loadFile(rendererHtml);
   mainWindow.once("ready-to-show", () => {
     if (visible) mainWindow?.show();
-    if (process.env.PILOT_SMOKE !== "1") return;
+    if (!isolatedSession()) return;
     const window = mainWindow;
     setTimeout(() => {
       void (async () => {
-        if (!window || window.isDestroyed()) {
+        const finish = async () => {
+          if (selfTestSession()) {
+            const code = await runSelfTest();
+            app.exit(code);
+            return;
+          }
           app.exit(0);
+        };
+        if (!window || window.isDestroyed()) {
+          await finish();
           return;
         }
         const { mkdirSync, writeFileSync } = await import("node:fs");
@@ -629,7 +749,10 @@ function createMainWindow(visible = true): void {
           writeFileSync(path, image.toPNG());
         };
         const shot = process.env.PILOT_SHOT;
-        if (shot) await save(shot);
+        if (shot) {
+          mkdirSync(join(shot, ".."), { recursive: true });
+          await save(shot);
+        }
         const frames = process.env.PILOT_FRAMES;
         if (frames) {
           mkdirSync(frames, { recursive: true });
@@ -647,7 +770,7 @@ function createMainWindow(visible = true): void {
             await save(join(frames, `frame-${String(index).padStart(2, "0")}.png`));
           }
         }
-        app.exit(0);
+        await finish();
       })();
     }, 900);
   });
@@ -1296,6 +1419,10 @@ function readDesktopSecret(name: string): string | null {
 }
 
 async function readGoogleCredentialFile(account: Account): Promise<string | null> {
+  return refreshFlight(account.secretRef, async () => readGoogleCredentialFileBody(account));
+}
+
+async function readGoogleCredentialFileBody(account: Account): Promise<string | null> {
   const path =
     account.secretRef === "discovered:antigravity"
       ? join(home(), ".gemini", "antigravity-cli", "antigravity-oauth-token")
@@ -1371,7 +1498,7 @@ function syncManagedSettings(): void {
 }
 
 async function maybeInstallUpdate(): Promise<void> {
-  if (process.env.PILOT_SMOKE === "1" || !config.autoUpdate || !app.isPackaged) return;
+  if (isolatedSession() || !config.autoUpdate || !app.isPackaged) return;
   await checkForUpdate();
   if (!updateNotice) return;
   const kind = installKind({
@@ -1384,10 +1511,8 @@ async function maybeInstallUpdate(): Promise<void> {
   const asset = pickUpdateAsset(updateNotice.version, kind, process.arch, updateAssets);
   if (!asset) return;
   try {
-    const response = await fetch(asset.url, { signal: AbortSignal.timeout(120_000) });
-    if (!response.ok) return;
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    if (!looksLikeInstaller(asset.kind, bytes)) return;
+    const bytes = await fetchReleaseBytes(asset.url, (input, init) => fetch(input, init), AbortSignal.timeout(120_000));
+    if (!bytes || !looksLikeInstaller(asset.kind, bytes)) return;
     const dir = join(app.getPath("temp"), "claude-account-pilot-update");
     mkdirSync(dir, { recursive: true });
     const file = join(dir, asset.name);
@@ -1399,7 +1524,7 @@ async function maybeInstallUpdate(): Promise<void> {
       return;
     }
     if (asset.kind === "mac-zip") {
-      const appPath = macAppPath(process.execPath);
+      const appPath = macAppBundle(process.execPath);
       if (!appPath) return;
       execFileSync("unzip", ["-qo", file, "-d", dir], { timeout: 120_000 });
       const unpacked = join(dir, "Claude Account Pilot.app");
@@ -1416,20 +1541,13 @@ async function maybeInstallUpdate(): Promise<void> {
     if (asset.kind === "win-portable") {
       const target = process.env.PORTABLE_EXECUTABLE_FILE || process.execPath;
       const script = join(dir, "swap.cmd");
-      writeFileSync(script, `@echo off\r\nping 127.0.0.1 -n 3 >nul\r\nmove /Y "${file}" "${target}"\r\nstart "" "${target}"\r\n`);
+      writeFileSync(script, windowsSwapScript(file, target));
       spawn("cmd.exe", ["/c", script], { detached: true, stdio: "ignore" }).unref();
       relaunchUpdated(updateNotice.version);
     }
   } catch {
     /* keep the download link; a failed install must not take the proxy down */
   }
-}
-
-function macAppPath(execPath: string): string | null {
-  const marker = ".app/";
-  const index = execPath.indexOf(marker);
-  if (index < 0) return null;
-  return execPath.slice(0, index + marker.length - 1);
 }
 
 function relaunchUpdated(version: string): void {
@@ -1441,9 +1559,9 @@ function relaunchUpdated(version: string): void {
 
 let updateAssets: Array<{ name?: string; browser_download_url?: string }> = [];
 
-if (process.env.PILOT_SMOKE === "1") {
+if (isolatedSession()) {
   const tag = process.env.PILOT_LANG === "tr" ? "tr" : "en";
-  app.setPath("userData", join(tmpdir(), `pilot-smoke-${tag}`));
+  app.setPath("userData", process.env.PILOT_USER_DATA?.trim() || join(tmpdir(), `pilot-smoke-${tag}`));
 }
 
 const gotLock = app.requestSingleInstanceLock();
@@ -1458,6 +1576,7 @@ if (!gotLock) {
     ledgerPath = join(dir, "ledger.json");
     runtimePath = join(dir, "runtime.json");
     logPath = join(dir, "pilot.log");
+    quarantineConfig(configPath);
     config = loadConfig(configPath);
     if (!config.lang) config.lang = detectLang(app.getLocale());
     runtime.config = config;
@@ -1471,18 +1590,23 @@ if (!gotLock) {
     ledger = loadLedger(ledgerPath);
     secrets = createSecretStore(join(dir, "secrets.bin"));
     applySmokeOverrides();
-    if (process.env.PILOT_SMOKE !== "1") adoptMachine();
+    if (!isolatedSession() || selfTestSession()) adoptMachine();
     persist();
     icon = nativeImage.createFromPath(join(here, "../icon.png"));
     if (icon.isEmpty()) icon = nativeImage.createEmpty();
     else icon = icon.resize({ width: 18, height: 18 });
-    tray = new Tray(icon);
-    tray.on("click", () => togglePopover());
+    try {
+      tray = new Tray(icon);
+      tray.on("click", () => togglePopover());
+    } catch {
+      tray = null;
+    }
     registerIpc();
-    applyLoginItem();
+    if (!isolatedSession()) applyLoginItem();
+    if (selfTestSession()) config.proxyPort = 0;
     await startListening();
-    if (process.env.PILOT_SMOKE !== "1") syncManagedSettings();
-    const visible = process.env.PILOT_SMOKE === "1" || config.accounts.length === 0;
+    if (!isolatedSession() || selfTestSession()) syncManagedSettings();
+    const visible = isolatedSession() || config.accounts.length === 0;
     if (process.platform === "darwin" && !visible && app.dock) app.dock.hide();
     createMainWindow(visible);
     syncWidget();
@@ -1494,7 +1618,7 @@ if (!gotLock) {
     healTimer = setInterval(() => {
       if (quitting) return;
       if (config.proxyEnabled && !proxy) void startListening();
-      if (process.env.PILOT_SMOKE !== "1") syncManagedSettings();
+      if (!isolatedSession() || selfTestSession()) syncManagedSettings();
     }, 30_000);
     healTimer.unref();
   });

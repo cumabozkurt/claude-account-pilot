@@ -124,12 +124,12 @@
           see: [
             "Dashboard charts, token and cost tables, and a request log with no prompt text.",
             "5-hour, 7-day, and per-model weekly windows from the Claude usage endpoint.",
-            "Codex, OpenRouter, Gemini, and Antigravity routing, with a fallback on each route.",
+            "Codex, OpenRouter, Gemini, and Antigravity routing. A 429, a 5xx, or a dropped connection tries the rest of the fallback chain.",
             "Cursor is detected and not called. It has no stable messages API.",
             "English or Turkish. The tray popover, menu bar, and widget follow the same switch.",
           ],
           limitTitle: "What it will not invent",
-          limit: "If a Claude login is already on the computer, install is enough. A new Claude account still needs the code from Anthropic's page. Claude Desktop's saved token is encrypted and is not decrypted. Cursor is not routed. Antigravity can refresh only when its Google client is in a config file, not when it is compiled into the binary. A .deb is not auto-installed. The full list is in docs/LIMITATIONS.md.",
+          limit: "If a Claude login is already on the computer, install is enough. A new Claude account still needs the code from Anthropic's page. Claude Desktop's saved token is encrypted and is not decrypted. Cursor is not routed. Antigravity can refresh only when its Google client is in a config file, not when it is compiled into the binary. A .deb is not auto-installed. Update downloads stay on GitHub release hosts and are not checksum-signed. The full list is in docs/LIMITATIONS.md.",
           foot: "Local only. Secrets stay in the operating system keychain. MIT license.",
         },
         tr: {
@@ -149,12 +149,12 @@
           see: [
             "Pano grafikleri, belirteç ve maliyet tabloları, istem metni olmayan istek günlüğü.",
             "Claude kullanım ucundan 5 saat, 7 gün ve modele özel haftalık pencereler.",
-            "Codex, OpenRouter, Gemini ve Antigravity yönlendirmesi; her rotada bir yedek.",
+            "Codex, OpenRouter, Gemini ve Antigravity yönlendirmesi. 429, 5xx veya kopan bağlantı yedek zincirin kalanını dener.",
             "Cursor tespit edilir ve çağrılmaz. Kararlı bir mesaj API'si yoktur.",
             "Türkçe veya İngilizce. Tepsi penceresi, menü çubuğu ve araç aynı anahtarı kullanır.",
           ],
           limitTitle: "Uydurmadığı şey",
-          limit: "Bilgisayarda Claude girişi varsa kurmak yeter. Yeni bir Claude hesabı Anthropic sayfasındaki kodu ister. Claude Desktop'un kayıtlı belirteci şifrelidir ve çözülmez. Cursor yönlendirilmez. Antigravity, Google istemcisi bir yapılandırma dosyasındaysa yenilenir; ikili dosyanın içindeyse yenilenemez. Deb paketi kendiliğinden kurulmaz. Tam liste docs/LIMITATIONS.md içindedir.",
+          limit: "Bilgisayarda Claude girişi varsa kurmak yeter. Yeni bir Claude hesabı Anthropic sayfasındaki kodu ister. Claude Desktop'un kayıtlı belirteci şifrelidir ve çözülmez. Cursor yönlendirilmez. Antigravity, Google istemcisi bir yapılandırma dosyasındaysa yenilenir; ikili dosyanın içindeyse yenilenemez. Deb paketi kendiliğinden kurulmaz. Güncelleme indirmesi GitHub yayın konaklarında kalır ve imzalı sağlama yoktur. Tam liste docs/LIMITATIONS.md içindedir.",
           foot: "Yalnızca bu bilgisayar. Sırlar işletim sistemi anahtarlığında kalır. MIT lisansı.",
         },
       };

@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.0] - 2026-10-21
+
+- A review of the proxy, rotation, settings writer, token refresh, and updater. The proxy now tries the whole fallback chain (missing secret, 429, 5xx, or a dropped connection) instead of a single retry. A second proxy start cannot clear a server that already bound.
+- `anthropic-beta` and account ids are rejected when they contain a newline, so a client cannot add headers to the upstream request. The proxy still binds to `127.0.0.1` only.
+- Claude settings are not written through a symlink or a hard link, and not when the path resolves outside the home directory. A config file that is not JSON is moved to `config.json.broken` before defaults are saved.
+- Refresh of a Codex, Claude, or Google token is single-flight, so two overlapping requests cannot rotate one refresh token twice.
+- Update downloads follow redirects only across GitHub release hosts, and the macOS replace targets the `.app` that contains the running binary. The Windows swap script rejects paths that contain quotes or shell characters.
+- Packaged builds are started in CI on Linux, macOS, and Windows. The smoke checks the proxy, the tray, `settings.json` restore, and a fake release document, then removes what it installed.
+
 ## [1.1.0] - 2026-10-21
 
 - First launch reads the logins already on the computer: Claude Code's credentials file and macOS keychain item, Codex, OpenCode, Gemini, Antigravity, a live Claude Desktop session file, and API keys from the environment or `~/.claude/settings.json`. A removed login is not imported again.

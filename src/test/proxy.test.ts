@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { defaultConfig, type Account } from "../core/types.js";
-import { startProxy, type Upstream, type UpstreamRequest } from "../core/proxy.js";
+import { safeHeader, startProxy, type Upstream, type UpstreamRequest } from "../core/proxy.js";
 import type { RuntimeSnapshot } from "../core/plan.js";
 
 function account(partial: Partial<Account> & Pick<Account, "id" | "provider">): Account {
@@ -231,12 +231,181 @@ describe("proxy", () => {
       await proxy.close();
     }
   });
+
+  it("listens on 127.0.0.1 only", async () => {
+    const proxy = await startProxy(baseDeps(snapshotWith(), async () => anthropicBody("ok", "0.1")));
+    try {
+      const address = proxy.server.address();
+      assert.equal(typeof address === "object" && address ? address.address : "", "127.0.0.1");
+      const health = await fetch(`http://127.0.0.1:${proxy.port}/health`);
+      const body = (await health.json()) as { ok: boolean };
+      assert.equal(body.ok, true);
+    } finally {
+      await proxy.close();
+    }
+  });
+
+  it("streams an Anthropic response and forwards a tool call", async () => {
+    const snapshot = snapshotWith([account({ id: "a", provider: "claude" })]);
+    let sawTool = false;
+    async function* chunks() {
+      yield Buffer.from('data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"hi"}}\n\n');
+    }
+    const upstream: Upstream = async (request) => {
+      const payload = JSON.parse(request.body.toString("utf8")) as { stream?: boolean; tools?: Array<{ name?: string }> };
+      if (payload.tools) {
+        sawTool = payload.tools.some((tool) => tool.name === "get_weather");
+        return anthropicBody("tool-ack", "0.1");
+      }
+      assert.equal(payload.stream, true);
+      return { status: 200, headers: { "content-type": "text/event-stream" }, stream: chunks() };
+    };
+    const proxy = await startProxy(baseDeps(snapshot, upstream, { a: "key-a" }));
+    try {
+      const streamed = await post(proxy.port, {
+        model: "claude-sonnet-4-5",
+        max_tokens: 16,
+        stream: true,
+        messages: [{ role: "user", content: "hi" }],
+      });
+      assert.match(streamed, /text_delta/);
+      const tools = await post(proxy.port, {
+        model: "claude-sonnet-4-5",
+        max_tokens: 16,
+        tools: [{ name: "get_weather", description: "weather", input_schema: { type: "object", properties: {} } }],
+        messages: [{ role: "user", content: "weather" }],
+      });
+      assert.match(tools, /tool-ack/);
+      assert.equal(sawTool, true);
+    } finally {
+      await proxy.close();
+    }
+  });
+
+  it("fails over a missing secret, a 429, a 500, and a dropped connection", async () => {
+    const snapshot = snapshotWith([
+      account({ id: "a", provider: "claude", label: "a" }),
+      account({ id: "b", provider: "claude", label: "b" }),
+      account({ id: "c", provider: "claude", label: "c" }),
+      account({ id: "d", provider: "claude", label: "d" }),
+    ]);
+    const seen: string[] = [];
+    const upstream: Upstream = async (request) => {
+      const key = request.headers["x-api-key"] ?? "";
+      seen.push(key);
+      if (key === "key-b") return { status: 429, headers: { "content-type": "application/json" }, body: Buffer.from('{"error":"rate"}') };
+      if (key === "key-c") return { status: 503, headers: { "content-type": "application/json" }, body: Buffer.from('{"error":"down"}') };
+      if (key === "key-d") throw new Error("socket hang up");
+      return anthropicBody(key, "0.1");
+    };
+    const proxy = await startProxy(
+      baseDeps(snapshot, upstream, { a: "", b: "key-b", c: "key-c", d: "key-d", e: "key-e" }),
+    );
+    snapshot.config.accounts.push(account({ id: "e", provider: "claude", label: "e" }));
+    try {
+      const text = await post(proxy.port, { model: "claude-sonnet-4-5", max_tokens: 8, messages: [{ role: "user", content: "go" }] });
+      assert.match(text, /key-e/);
+      assert.deepEqual(seen, ["key-b", "key-c", "key-d", "key-e"]);
+    } finally {
+      await proxy.close();
+    }
+  });
+
+  it("switches across three accounts once each reaches 98%", async () => {
+    const snapshot = snapshotWith([
+      account({ id: "a", provider: "claude" }),
+      account({ id: "b", provider: "claude" }),
+      account({ id: "c", provider: "claude" }),
+    ]);
+    const upstream: Upstream = async (request) => {
+      const key = request.headers["x-api-key"] ?? "";
+      const utilization = key === "key-c" ? "0.10" : "0.98";
+      return anthropicBody(key, utilization);
+    };
+    const proxy = await startProxy(baseDeps(snapshot, upstream, { a: "key-a", b: "key-b", c: "key-c" }));
+    try {
+      const first = await post(proxy.port, { model: "claude-sonnet-4-5", max_tokens: 4, messages: [] });
+      const second = await post(proxy.port, { model: "claude-sonnet-4-5", max_tokens: 4, messages: [] });
+      const third = await post(proxy.port, { model: "claude-sonnet-4-5", max_tokens: 4, messages: [] });
+      assert.match(first, /key-a/);
+      assert.match(second, /key-b/);
+      assert.match(third, /key-c/);
+      assert.equal(snapshot.percentByAccount.a, 98);
+      assert.equal(snapshot.percentByAccount.b, 98);
+    } finally {
+      await proxy.close();
+    }
+  });
+
+  it("forwards a clean anthropic-beta header and drops a poisoned one", async () => {
+    assert.equal(safeHeader("oauth-2025-04-20"), "oauth-2025-04-20");
+    assert.equal(safeHeader("oauth\r\nX-Injected: yes"), undefined);
+    assert.equal(safeHeader(["oauth", "extra"]), "oauth, extra");
+    const snapshot = snapshotWith([account({ id: "a", provider: "claude" })]);
+    let beta: string | undefined;
+    const upstream: Upstream = async (request) => {
+      beta = request.headers["anthropic-beta"];
+      return anthropicBody("ok", "0.1");
+    };
+    const proxy = await startProxy(baseDeps(snapshot, upstream, { a: "key-a" }));
+    try {
+      await post(proxy.port, { model: "claude-sonnet-4-5", max_tokens: 4, messages: [] }, false, {
+        "anthropic-beta": "oauth-2025-04-20",
+      });
+      assert.equal(beta, "oauth-2025-04-20");
+    } finally {
+      await proxy.close();
+    }
+  });
 });
 
-async function post(port: number, body: unknown, withStatus = false): Promise<string & { status?: number; body?: string }> {
+function snapshotWith(accounts: Account[] = []): RuntimeSnapshot {
+  const snapshot: RuntimeSnapshot = {
+    config: defaultConfig(),
+    activeByProvider: {},
+    percentByAccount: {},
+    cooldownUntil: {},
+  };
+  snapshot.config.accounts = accounts;
+  return snapshot;
+}
+
+function baseDeps(
+  snapshot: RuntimeSnapshot,
+  upstream: Upstream,
+  secrets: Record<string, string> = {},
+): Parameters<typeof startProxy>[0] {
+  return {
+    getState: () => snapshot,
+    getSecret: async (item) => {
+      const value = secrets[item.id];
+      return value ? value : null;
+    },
+    upstream,
+    onQuota: (id, percent) => {
+      snapshot.percentByAccount[id] = percent;
+    },
+    onUsage: () => undefined,
+    onSwitch: () => undefined,
+    onActivity: () => undefined,
+    onCooldown: (id, until) => {
+      snapshot.cooldownUntil[id] = until;
+    },
+    rememberActive: (provider, id) => {
+      snapshot.activeByProvider[provider] = id;
+    },
+  };
+}
+
+async function post(
+  port: number,
+  body: unknown,
+  withStatus = false,
+  headers: Record<string, string> = {},
+): Promise<string & { status?: number; body?: string }> {
   const response = await fetch(`http://127.0.0.1:${port}/v1/messages`, {
     method: "POST",
-    headers: { "content-type": "application/json", "x-api-key": "pilot-local" },
+    headers: { "content-type": "application/json", "x-api-key": "pilot-local", ...headers },
     body: JSON.stringify(body),
   });
   const text = await response.text();

@@ -40,6 +40,80 @@ export function installKind(input: {
   return null;
 }
 
+/** Hosts a GitHub release asset is allowed to redirect through. */
+const REDIRECT_HOSTS = new Set([
+  "github.com",
+  "objects.githubusercontent.com",
+  "release-assets.githubusercontent.com",
+  "github-releases.githubusercontent.com",
+]);
+
+export interface ManualResponse {
+  status: number;
+  headers: { get(name: string): string | null };
+  arrayBuffer(): Promise<ArrayBuffer>;
+}
+
+/**
+ * Follow redirects only while every hop stays on GitHub's release hosts.
+ * A download URL that leaves those hosts is rejected.
+ */
+export function redirectAllowed(fromUrl: string, location: string): string | null {
+  let next: URL;
+  try {
+    next = new URL(location, fromUrl);
+  } catch {
+    return null;
+  }
+  if (next.protocol !== "https:") return null;
+  if (!REDIRECT_HOSTS.has(next.hostname)) return null;
+  return next.toString();
+}
+
+export async function fetchReleaseBytes(
+  url: string,
+  fetchImpl: (input: string, init: { redirect: "manual"; signal?: AbortSignal }) => Promise<ManualResponse>,
+  signal?: AbortSignal,
+): Promise<Uint8Array | null> {
+  if (!url.startsWith(RELEASE_HOST)) return null;
+  let current = url;
+  for (let hop = 0; hop < 5; hop += 1) {
+    const response = await fetchImpl(current, { redirect: "manual", signal });
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get("location");
+      if (!location) return null;
+      const next = redirectAllowed(current, location);
+      if (!next) return null;
+      current = next;
+      continue;
+    }
+    if (response.status < 200 || response.status >= 300) return null;
+    return new Uint8Array(await response.arrayBuffer());
+  }
+  return null;
+}
+
+/** The .app that contains this executable. An earlier ".app" in the path is not the bundle. */
+export function macAppBundle(execPath: string): string | null {
+  const marker = ".app/";
+  const index = execPath.lastIndexOf(marker);
+  if (index < 0) return null;
+  const bundle = execPath.slice(0, index + ".app".length);
+  if (!bundle.endsWith(".app")) return null;
+  const rest = execPath.slice(bundle.length);
+  if (!rest.startsWith("/Contents/")) return null;
+  return bundle;
+}
+
+/** A cmd script that swaps a portable exe. Quotes and newlines in a path are rejected. */
+export function windowsSwapScript(file: string, target: string): string {
+  const quote = (value: string) => {
+    if (/[\r\n"&|<>^%]/.test(value)) throw new Error("unsafe update path");
+    return value;
+  };
+  return `@echo off\r\nping 127.0.0.1 -n 3 >nul\r\nmove /Y "${quote(file)}" "${quote(target)}"\r\nstart "" "${quote(target)}"\r\n`;
+}
+
 export function looksLikeInstaller(kind: InstallKind, bytes: Uint8Array): boolean {
   if (bytes.length < 1_000_000) return false;
   if (kind === "mac-zip") return bytes[0] === 0x50 && bytes[1] === 0x4b;
