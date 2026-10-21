@@ -1,5 +1,12 @@
 # Değişiklik günlüğü
 
+## [1.0.0] - 2026-10-21
+
+- Dışa aktarma; hesaplar, rotalar, döküm ve kota geçmişini JSON olarak yazar. Sır tutamaçları ve yenileme parmak izleri dışarıda kalır.
+- Hareket, uygulama veri klasöründeki `pilot.log` dosyasına eklenir. Satırlar kısadır ve istem içermez. Dosya 1 MB sonra döner.
+- Açılışta ve Ayarlar'dan uygulama GitHub'da daha yeni bir sürüm arar ve bağlantısını gösterir. İmzalı olmayan derlemeler kendiliğinden kurulmaz.
+- Belge sitesi ve iki README, abonelik girişini, yönlendirilen sağlayıcıları ve hâlâ gerçek olan sınırları anlatır.
+
 ## [0.5.0] - 2026-10-21
 
 - Pencere Pano, Hesaplar, Rotalar, Günlük ve Ayarlar olarak ayrıldı. İlk açılışta, bir hesap eklenene veya geçilene kadar kısa bir sihirbaz görünür.

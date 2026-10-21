@@ -1,8 +1,8 @@
-import { app, BrowserWindow, Menu, Notification, Tray, ipcMain, nativeImage, shell, type NativeImage } from "electron";
+import { app, BrowserWindow, Menu, Notification, Tray, dialog, ipcMain, nativeImage, shell, type NativeImage } from "electron";
 import { execFile } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { homedir, userInfo } from "node:os";
+import { homedir, tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
@@ -10,7 +10,10 @@ import { applyClaudeBaseUrl, claudeEnvSnippet, restoreClaudeSettings } from "../
 import { loadConfig, saveConfig } from "../core/config.js";
 import { captureDisk, claudeCodeOwns, keychainPlan, readCredentialsRaw, restoreCredentialsFile, writeCredentialsFile } from "../core/credential-swap.js";
 import { DISCOVERED_CLAUDE, DISCOVERED_CODEX, readCodexAuth } from "../core/credentials.js";
+import { buildExport } from "../core/export-data.js";
 import { appendSample, usageByDay, usageByModel, type QuotaSample } from "../core/history.js";
+import { appendLog } from "../core/log-file.js";
+import { newerRelease, type ReleaseNotice } from "../core/update-check.js";
 import { bindingReset, evaluateAlerts, percentAfterReset } from "../core/monitor.js";
 import {
   accessTokenFromSecret,
@@ -71,6 +74,8 @@ let secrets: SecretStore = null as unknown as SecretStore;
 let ledgerPath = "";
 let configPath = "";
 let runtimePath = "";
+let logPath = "";
+let updateNotice: ReleaseNotice | null = null;
 let ledger = emptyLedger();
 let proxy: RunningProxy | null = null;
 let mainWindow: BrowserWindow | null = null;
@@ -159,6 +164,24 @@ function persistRuntime(): void {
 function pushActivity(event: ActivityEvent): void {
   activity.unshift(event);
   if (activity.length > 40) activity.length = 40;
+  if (!logPath) return;
+  const vars = Object.entries(event.vars)
+    .map(([key, value]) => `${key}=${value}`)
+    .join(" ");
+  appendLog(logPath, `${event.at} ${event.key} ${vars}`.slice(0, 500));
+}
+
+async function checkForUpdate(): Promise<void> {
+  try {
+    const response = await fetch("https://api.github.com/repos/cumabozkurt/claude-account-pilot/releases/latest", {
+      headers: { accept: "application/vnd.github+json", "user-agent": "claude-account-pilot" },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!response.ok) return;
+    updateNotice = newerRelease(pkg.version, await response.json());
+  } catch {
+    /* offline or rate limited: keep the current build */
+  }
 }
 
 function publicState() {
@@ -215,6 +238,7 @@ function publicState() {
     activeLabel: active?.label ?? "",
     activePercent: activeQuota?.percent ?? (active ? runtime.percentByAccount[active.id] ?? null : null),
     message: flash,
+    updateNotice,
     onboarded: config.onboarded,
     days: usageByDay(
       (ledger.rows ?? []).map((row) => ({
@@ -540,23 +564,41 @@ function createMainWindow(): void {
   void mainWindow.loadFile(rendererHtml);
   mainWindow.once("ready-to-show", () => {
     mainWindow?.show();
-    if (process.env.PILOT_SMOKE === "1") {
-      setTimeout(() => {
-        const shot = process.env.PILOT_SHOT;
-        const finish = () => app.exit(0);
-        if (!shot || !mainWindow) {
-          finish();
+    if (process.env.PILOT_SMOKE !== "1") return;
+    const window = mainWindow;
+    setTimeout(() => {
+      void (async () => {
+        if (!window || window.isDestroyed()) {
+          app.exit(0);
           return;
         }
-        mainWindow.webContents
-          .capturePage()
-          .then((image) => {
-            const { writeFileSync } = require("node:fs") as typeof import("node:fs");
-            writeFileSync(shot, image.toPNG());
-          })
-          .finally(finish);
-      }, 700);
-    }
+        const { mkdirSync, writeFileSync } = await import("node:fs");
+        const save = async (path: string) => {
+          const image = await window.webContents.capturePage();
+          writeFileSync(path, image.toPNG());
+        };
+        const shot = process.env.PILOT_SHOT;
+        if (shot) await save(shot);
+        const frames = process.env.PILOT_FRAMES;
+        if (frames) {
+          mkdirSync(frames, { recursive: true });
+          const panels = ["dashboard", "accounts", "routes", "log", "settings"] as const;
+          for (let index = 0; index < panels.length; index += 1) {
+            const panel = panels[index];
+            const scroll =
+              panel === "accounts"
+                ? "document.querySelector('#accounts')?.scrollIntoView({block:'start'});"
+                : "window.scrollTo(0,0);";
+            await window.webContents.executeJavaScript(
+              `document.querySelector('.nav button[data-panel="${panel}"]')?.click(); ${scroll}`,
+            );
+            await new Promise((resolve) => setTimeout(resolve, 450));
+            await save(join(frames, `frame-${String(index).padStart(2, "0")}.png`));
+          }
+        }
+        app.exit(0);
+      })();
+    }, 900);
   });
   mainWindow.on("close", (event) => {
     if (!quitting) {
@@ -925,6 +967,32 @@ function registerIpc(): void {
       return { ok: false };
     }
   });
+  ipcMain.handle("pilot:export", async () => {
+    const result = await dialog.showSaveDialog({
+      defaultPath: "claude-account-pilot-export.json",
+      filters: [{ name: "JSON", extensions: ["json"] }],
+    });
+    if (result.canceled || !result.filePath) return { ok: false };
+    writeFileSync(
+      result.filePath,
+      buildExport({ version: pkg.version, config, ledger, history, activity }),
+      { mode: 0o600 },
+    );
+    flash = { text: translate(config.lang ?? "en", "export.done") };
+    publish();
+    return { ok: true };
+  });
+  ipcMain.handle("pilot:checkUpdate", async () => {
+    await checkForUpdate();
+    flash = {
+      text: updateNotice
+        ? translate(config.lang ?? "en", "update.available", { version: updateNotice.version })
+        : translate(config.lang ?? "en", "update.none"),
+      warn: false,
+    };
+    publish();
+    return updateNotice;
+  });
   ipcMain.handle("pilot:dismissWizard", () => {
     config.onboarded = true;
     persist();
@@ -1012,6 +1080,148 @@ function importDiscovered(provider: ProviderId): void {
   }
 }
 
+/** Screenshot runs set the language here. Electron's locale ignores LANG in this environment. */
+function applySmokeOverrides(): void {
+  const forced = process.env.PILOT_LANG;
+  if (forced === "en" || forced === "tr") config.lang = forced;
+  if (process.env.PILOT_DEMO !== "1") return;
+  config.onboarded = true;
+  config.widgetEnabled = false;
+  config.switchThreshold = 98;
+  config.providersEnabled = {
+    claude: true,
+    "opencode-go": true,
+    deepseek: true,
+    codex: true,
+    cursor: false,
+    antigravity: true,
+    openrouter: true,
+    gemini: true,
+  };
+  config.accounts = [
+    {
+      id: "demo-pro",
+      provider: "claude",
+      label: "Claude Pro",
+      enabled: true,
+      secretRef: "demo:pro",
+      authKind: "oauth",
+      email: "ada@example.com",
+    },
+    {
+      id: "demo-max",
+      provider: "claude",
+      label: "Claude Max",
+      enabled: true,
+      secretRef: "demo:max",
+      authKind: "oauth",
+      email: "max@example.com",
+    },
+    { id: "demo-ds", provider: "deepseek", label: "DeepSeek", enabled: true, secretRef: "demo:ds", authKind: "api-key" },
+    { id: "demo-or", provider: "openrouter", label: "OpenRouter", enabled: true, secretRef: "demo:or", authKind: "api-key" },
+  ];
+  config.syncedAccountId = "demo-pro";
+  config.routes = [
+    {
+      id: "haiku-opencode-deepseek",
+      enabled: true,
+      match: "*haiku*",
+      provider: "opencode-go",
+      targetModel: "deepseek-v4-flash",
+      fallbacks: [{ provider: "deepseek", targetModel: "deepseek-chat" }],
+    },
+    {
+      id: "opus-openrouter",
+      enabled: true,
+      match: "*opus*",
+      provider: "openrouter",
+      targetModel: "anthropic/claude-opus-4",
+      fallbacks: [{ provider: "claude", targetModel: "claude-opus-4" }],
+    },
+    {
+      id: "haiku-deepseek-direct",
+      enabled: false,
+      match: "*haiku*",
+      provider: "deepseek",
+      targetModel: "deepseek-chat",
+    },
+  ];
+  runtime.activeByProvider = { claude: "demo-pro" };
+  const resetsAt = new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString();
+  quotaNotes.clear();
+  quotaNotes.set("demo-pro", {
+    windows: [
+      { label: "5h", percent: 41, resetsAt },
+      { label: "7d", percent: 62, resetsAt },
+    ],
+    percent: 62,
+    source: "provider",
+  });
+  quotaNotes.set("demo-max", {
+    windows: [
+      { label: "5h", percent: 97, resetsAt },
+      { label: "7d", percent: 44, resetsAt },
+    ],
+    percent: 97,
+    source: "provider",
+  });
+  quotaNotes.set("demo-or", {
+    windows: [{ label: "balance", percent: 18, name: "credits" }],
+    percent: 18,
+    source: "provider",
+    note: "credits",
+  });
+  runtime.percentByAccount = { "demo-pro": 62, "demo-max": 97, "demo-or": 18 };
+  const now = Date.now();
+  history = [];
+  for (let index = 0; index < 12; index += 1) {
+    const at = new Date(now - (11 - index) * 60 * 60 * 1000).toISOString();
+    history.push({ at, accountId: "demo-pro", percent: 28 + index * 3, windows: [] });
+    history.push({ at, accountId: "demo-max", percent: 74 + Math.min(index, 23), windows: [] });
+  }
+  ledger = emptyLedger();
+  const samples: Array<[string, string, number, number, number]> = [
+    ["demo-pro", "claude-sonnet-4-5", 18000, 4200, 0],
+    ["demo-pro", "claude-haiku-4-5", 9000, 1600, 0],
+    ["demo-max", "claude-opus-4", 6000, 2100, 1],
+    ["demo-ds", "deepseek-chat", 24000, 8000, 1],
+    ["demo-or", "anthropic/claude-opus-4", 3000, 900, 2],
+  ];
+  for (const [accountId, model, inputTokens, outputTokens, days] of samples) {
+    recordUsage(ledger, accountId, model, { inputTokens, outputTokens, cacheReadTokens: 0, cacheWriteTokens: 0 });
+    const row = ledger.rows?.[ledger.rows.length - 1];
+    if (row) {
+      const at = new Date();
+      at.setUTCHours(12, 0, 0, 0);
+      at.setUTCDate(at.getUTCDate() - days);
+      row.at = at.toISOString();
+    }
+  }
+  activity.splice(0, activity.length);
+  activity.push(
+    {
+      at: new Date(now - 20 * 60 * 1000).toISOString(),
+      key: "log.switch",
+      vars: { provider: "claude", from: "Claude Max", to: "Claude Pro", reason: "97%" },
+    },
+    {
+      at: new Date(now - 50 * 60 * 1000).toISOString(),
+      key: "log.request",
+      vars: { requested: "claude-haiku-4-5", target: "deepseek-v4-flash", provider: "opencode-go", account: "DeepSeek" },
+    },
+    {
+      at: new Date(now - 3 * 60 * 60 * 1000).toISOString(),
+      key: "log.proxy",
+      vars: { state: "listening", address: "127.0.0.1:15721" },
+    },
+  );
+}
+
+if (process.env.PILOT_SMOKE === "1") {
+  const tag = process.env.PILOT_LANG === "tr" ? "tr" : "en";
+  app.setPath("userData", join(tmpdir(), `pilot-smoke-${tag}`));
+}
+
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
@@ -1023,6 +1233,7 @@ if (!gotLock) {
     configPath = join(dir, "config.json");
     ledgerPath = join(dir, "ledger.json");
     runtimePath = join(dir, "runtime.json");
+    logPath = join(dir, "pilot.log");
     config = loadConfig(configPath);
     if (!config.lang) config.lang = detectLang(app.getLocale());
     runtime.config = config;
@@ -1035,6 +1246,7 @@ if (!gotLock) {
     alertSeen = Object.fromEntries((stored.alertSeen ?? []).map((key) => [key, true as const]));
     ledger = loadLedger(ledgerPath);
     secrets = createSecretStore(join(dir, "secrets.bin"));
+    applySmokeOverrides();
     persist();
     icon = nativeImage.createFromPath(join(here, "../icon.png"));
     if (icon.isEmpty()) icon = nativeImage.createEmpty();
@@ -1048,6 +1260,7 @@ if (!gotLock) {
     syncWidget();
     publish();
     void probeQuotas();
+    void checkForUpdate().then(() => publish());
     probeTimer = setInterval(() => void probeQuotas(), 60_000);
     probeTimer.unref();
   });

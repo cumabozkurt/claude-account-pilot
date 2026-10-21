@@ -25,6 +25,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Copy screenshots into the site
+        run: mkdir -p site/images && cp docs/images/overview-en.png docs/images/overview-tr.png docs/images/tour.gif site/images/
       - uses: actions/configure-pages@v5
         with:
           enablement: true

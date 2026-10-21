@@ -22,9 +22,11 @@ Tasarım, 21 Ekim 2026'dan önceki altı ayda güncellenmiş en yıldızlı 25 b
 
 | English | Türkçe |
 |---|---|
-| ![Main screen in English](docs/images/overview-en.png) | ![Ana ekran Türkçe](docs/images/overview-tr.png) |
+| ![Dashboard in English](docs/images/overview-en.png) | ![Pano Türkçe](docs/images/overview-tr.png) |
 
-Bu görüntülerdeki sarı satır, ekran görüntüsünün alındığı başsız Linux oturumuna aittir; orada işletim sistemi gizli deposu yoktur. Normal bir macOS, Windows veya masaüstü Linux girişinde anahtarlar sistem anahtarlığına yazılır ve bu satır görünmez.
+![Pano, Hesaplar, Rotalar, Günlük ve Ayarlar arasında kısa bir geçiş](docs/images/tour.gif)
+
+Bu resimlerdeki sayılar yerel bir demodur (`ada@example.com`, canlı oturum yok); grafik çizilecek bir çizgi bulsun diye. Sarı satır, ekran görüntüsünün alındığı başsız Linux oturumuna aittir; orada işletim sistemi gizli deposu yoktur. Normal bir macOS, Windows veya masaüstü Linux girişinde anahtarlar sistem anahtarlığına yazılır ve bu satır görünmez.
 
 ---
 
@@ -60,7 +62,7 @@ Bu uygulama o iş için küçük bir kumanda: hesaplar, sağlayıcılar ve model
 | Model rotaları | İlk açık eşleşme kazanır. Hazır kurallar `*haiku*` kalıbını OpenCode Go `deepseek-v4-flash` veya DeepSeek `deepseek-chat` modeline gönderir. İkisi de başlangıçta **kapalıdır**. |
 | Codex, OpenRouter, Gemini, Antigravity | Codex `~/.codex/auth.json` oturumunu kullanır ve erişim belirtecinin süresi dolunca yeniler. OpenRouter ve Gemini OpenAI sohbeti konuşur. Antigravity Google girişi ve yalnız daily Cloud Code ucunu kullanır. Her rotanın bir yedeği olabilir. |
 | Cursor | Yalnız tespit edilir. Kararlı bir mesaj API'si yoktur; Cursor adımı atlanır. Rotaya bir yedek verin. |
-| Sayılar | Sağlayıcı yüzde yayınlıyorsa yüzde; ayrıca giriş/çıkış belirteçleri, önbellek belirteçleri ve **tahmini** ABD doları maliyet. |
+| Sayılar | Sağlayıcı yüzde yayınlıyorsa yüzde; ayrıca giriş/çıkış belirteçleri, önbellek belirteçleri ve **tahmini** ABD doları maliyet. Pano kotayı zaman içinde çizer ve maliyeti modele ve güne göre ayırır. |
 | Tepsi | Menü çubuğu / sistem tepsisi, macOS menü çubuğunda yüzde, her platformda isteğe bağlı yüzen pencere. |
 | Claude ayarı | Tek düğme `ANTHROPIC_BASE_URL` değerini `~/.claude/settings.json` dosyasına yazar (CLI ve VS Code eklentisinin okuduğu dosya) ve yedeği geri yükleyebilir. İkinci eylem, seçilen aboneliği `~/.claude/.credentials.json` dosyasına ve macOS'ta Claude Code anahtarlık kaydına yazar; vekili yok sayan istemciler için. |
 | Diller | Türkçe ve İngilizce. İlk açılışta işletim sistemi dili, sonra seçim hatırlanır. |
@@ -87,9 +89,9 @@ Pencereyi kapatmak vekili durdurmaz. Çıkmak için tepsi menüsünü kullanın.
 
 ## İlk çalıştırma
 
-1. Uygulamayı açın. Sistem dili Türkçeyse arayüz Türkçedir.
-2. Her Claude hesabını ekleyin (ad, API anahtarı veya bearer belirteç). Yalnız trafik almasını istediklerinizi açık bırakın.
-3. **Claude ayarını yaz** düğmesine basın. Claude Code'u yeniden başlatın veya eklenti sekmesini kapatıp açın.
+1. Uygulamayı açın. Sistem dili Türkçeyse arayüz Türkçedir. EN/TR anahtarı hatırlanır.
+2. İlk ekran Claude Pro/Max girişi (kodu yapıştırın) veya `~/.claude/.credentials.json` içe aktarmayı sunar. API anahtarı da çalışır. Yalnız trafik almasını istediklerinizi açık bırakın.
+3. Claude Code ve VS Code eklentisi için **Claude ayarını yaz** düğmesine basın. Vekili yok sayan bir istemci için hesap satırındaki **Claude Code'da kullan** düğmesini kullanın. Claude Code'u yeniden başlatın veya eklenti sekmesini kapatıp açın.
 4. İsterseniz Claude'u başlattığınız kabuğa şunu yapıştırın:
 
 ```bash
@@ -103,15 +105,15 @@ Yerel anahtar, Claude Code'un başlamayı kabul etmesi için bir işarettir. Vek
 
 ## Ekran
 
-Tek sayfa, yukarıdan aşağı:
+Tek pencerede beş bölüm:
 
-- Vekil adresi, ortamı kopyala, Claude ayarını yaz/geri al, başlat/durdur.
-- Geçiş eşiği ve port. Oturum açılınca başlat. Yüzen pencere.
-- Sağlayıcılar; her birinin anahtarı ve o sağlayıcının gerçekten ne bildirebildiğine dair kısa bir not.
-- Hesaplar; kota çubuğu, varsa 5 saat ve 7 gün etiketleri, belirteç sayıları ve tahmini maliyet.
-- Bu bilgisayarda bulunan oturumlar.
-- Öncelik sırasıyla model rotaları.
-- Kısa hareket listesi (model, sağlayıcı, hesap). İstem değil.
+- **Pano.** Vekil adresi, ortamı kopyala, Claude ayarını yaz/geri al, başlat/durdur. Kota grafiği. Modele ve güne göre belirteç ve tahmini maliyet.
+- **Hesaplar.** Claude ve Antigravity girişi, kimlik içe aktarma, her hesabın kota çubuğu, 5 saat ve 7 gün etiketleri ve bu bilgisayarda bulunan oturumlar.
+- **Rotalar.** Sağlayıcı başına bir anahtar, sonra öncelik sırasıyla model rotaları; her rotada isteğe bağlı bir yedek.
+- **Günlük.** Hareket (model, sağlayıcı, hesap) ve sayılmış istekler. İstem değil.
+- **Ayarlar.** Geçiş eşiği, port, oturum açılınca başlat, yüzen pencere, bildirimler, dışa aktarma ve güncelleme denetimi.
+
+Tepsi tıklaması aynı sayıları küçük bir pencerede açar. macOS etkin yüzdeyi menü çubuğuna da yazar. Yüzen pencere her platformda isteğe bağlıdır.
 
 ## Yönlendirme
 
@@ -167,7 +169,8 @@ Araştırmada sürekli görünen diğer yığın Tauri 2'dir (CC Switch, QuotaBa
 - Codex kota pencereleri yalnız yukarı akış gönderirse görünür. Oturum dosyası okunur, bu uygulama tarafından yenilenmez.
 - Cursor'ın araç çağrılarını koruyan kararlı bir mesaj API'si yoktur. Tespit edilir, yönlendirilmez. Diğer sınırlar [docs/LIMITATIONS.md](docs/LIMITATIONS.md) içindedir. Antigravity, Google'ın daily Cloud Code ucuna gider. OpenRouter ve Gemini OpenAI uyumlu adımlardır; her rotada yedek vardır.
 - Maliyet sütunundaki fiyatlar göstermek için liste fiyatı tahminidir.
-- Derlemeler imzasızdır.
+- Derlemeler imzasızdır. Daha yeni bir GitHub sürümü duyurulur; sessizce kurulmaz.
+- Dışa aktarma ve `pilot.log` istem ve sır içermez. Günlük, uygulamanın kullanıcı verisi klasöründedir.
 - Menü çubuğu yüzdesi yalnız macOS'tadır. Linux ve Windows tepsi ipucunu ve isteğe bağlı yüzen pencereyi kullanır; bu masaüstlerinde genel bir menü çubuğu yoktur.
 
 ## Geliştirme

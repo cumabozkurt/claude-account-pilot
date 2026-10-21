@@ -72,6 +72,7 @@
       .muted { color: var(--muted); }
       code { font-family: ui-monospace, monospace; }
       ul { padding-left: 1.1rem; }
+      img { max-width: 100%; border-radius: 12px; border: 1px solid var(--line); display: block; margin: 0.6rem 0; }
     </style>
   </head>
   <body>
@@ -85,6 +86,7 @@
     <main>
       <h1 id="title"></h1>
       <p id="lead" class="muted"></p>
+      <img id="shot" alt="" />
       <p>
         <a class="button" id="release" href="https://github.com/cumabozkurt/claude-account-pilot/releases/latest"></a>
         <a class="ghost" id="source" href="https://github.com/cumabozkurt/claude-account-pilot"></a>
@@ -107,48 +109,52 @@
       const copy = {
         en: {
           title: "Switch Claude accounts at 98%.",
-          lead: "A desktop app for macOS, Windows and Linux. It watches every Claude account you add and, through a local proxy, moves traffic to the next available account. Haiku can be sent to DeepSeek on OpenCode Go. Quotas show a percent when one exists, plus tokens and estimated cost.",
+          lead: "A desktop app for macOS, Windows and Linux. It signs in to Claude Pro and Max, reads the real 5-hour and weekly windows, and moves traffic at 98%. The same proxy can send a model to DeepSeek, OpenCode Go, Codex, OpenRouter, Gemini, or Antigravity.",
           release: "Download",
           source: "Source",
           howTitle: "What you do",
           how: [
-            "Add the Claude accounts you own.",
-            "Point Claude Code and the VS Code extension at 127.0.0.1.",
+            "Sign in to Claude, or import the credentials file you already have.",
+            "Point Claude Code and the VS Code extension at 127.0.0.1. Or write the chosen login into Claude Code itself.",
             "Leave it in the tray. At 98% it uses the next account that still has room.",
           ],
-          seeTitle: "On the one screen",
+          shot: "images/overview-en.png",
+          shotAlt: "Dashboard in English, with a local demo chart",
+          seeTitle: "What you see",
           see: [
-            "Providers, models and accounts, each with an on/off switch.",
-            "5-hour and 7-day windows when Claude publishes them.",
-            "A Codex login already on the computer, reused locally.",
-            "Cursor and Antigravity detected, and not pretended to be an API.",
-            "English or Turkish, chosen from the system language the first time.",
+            "Dashboard charts, token and cost tables, and a request log with no prompt text.",
+            "5-hour, 7-day, and per-model weekly windows from the Claude usage endpoint.",
+            "Codex, OpenRouter, Gemini, and Antigravity routing, with a fallback on each route.",
+            "Cursor is detected and not called. It has no stable messages API.",
+            "English or Turkish. The tray popover, menu bar, and widget follow the same switch.",
           ],
           limitTitle: "What it will not invent",
-          limit: "OpenCode Go, DeepSeek, Cursor and Antigravity do not all publish a percent-used quota. The app shows tokens and estimated cost for traffic it carried, and it says when a percent is unavailable. Research notes: the 25 closest projects from the last six months.",
+          limit: "Claude Desktop's chat keeps its own encrypted session, so credential swap updates Claude Code and the VS Code extension, not that chat. Cursor is not routed. Antigravity's Google client id is entered in the app and is not in the git repo. Costs are estimates. Builds are unsigned, so an update is a download, not a silent install. The full list is in docs/LIMITATIONS.md.",
           foot: "Local only. Secrets stay in the operating system keychain. MIT license.",
         },
         tr: {
           title: "Claude hesapları %98'de değişir.",
-          lead: "macOS, Windows ve Linux için bir masaüstü uygulaması. Eklediğiniz her Claude hesabının kotasını izler ve yerel bir vekil üzerinden trafiği sıradaki uygun hesaba alır. Haiku, OpenCode Go üzerindeki DeepSeek'e gidebilir. Kota, yüzde varsa yüzde olarak, ayrıca belirteç ve tahmini maliyet olarak görünür.",
+          lead: "macOS, Windows ve Linux için bir masaüstü uygulaması. Claude Pro ve Max hesabına girer, gerçek 5 saatlik ve haftalık pencereleri okur ve %98'de trafiği taşır. Aynı vekil bir modeli DeepSeek, OpenCode Go, Codex, OpenRouter, Gemini veya Antigravity'ye gönderebilir.",
           release: "İndir",
           source: "Kaynak",
           howTitle: "Ne yaparsınız",
           how: [
-            "Size ait Claude hesaplarını ekleyin.",
-            "Claude Code ve VS Code eklentisini 127.0.0.1 adresine yönlendirin.",
+            "Claude'a giriş yapın veya elinizdeki kimlik dosyasını içe aktarın.",
+            "Claude Code ve VS Code eklentisini 127.0.0.1 adresine yönlendirin. Ya da seçilen oturumu doğrudan Claude Code'a yazın.",
             "Tepside kalsın. %98'de hâlâ yeri olan sıradaki hesabı kullanır.",
           ],
-          seeTitle: "Tek ekranda",
+          shot: "images/overview-tr.png",
+          shotAlt: "Türkçe pano, yerel bir demo grafikle",
+          seeTitle: "Ne görürsünüz",
           see: [
-            "Sağlayıcılar, modeller ve hesaplar; her birinin aç/kapa anahtarı var.",
-            "Claude yayınlıyorsa 5 saat ve 7 gün pencereleri.",
-            "Bilgisayarda açık olan Codex oturumu, yerinde kullanılır.",
-            "Cursor ve Antigravity tespit edilir; API'ymiş gibi davranılmaz.",
-            "Türkçe veya İngilizce; ilk seferde sistem dilinden seçilir.",
+            "Pano grafikleri, belirteç ve maliyet tabloları, istem metni olmayan istek günlüğü.",
+            "Claude kullanım ucundan 5 saat, 7 gün ve modele özel haftalık pencereler.",
+            "Codex, OpenRouter, Gemini ve Antigravity yönlendirmesi; her rotada bir yedek.",
+            "Cursor tespit edilir ve çağrılmaz. Kararlı bir mesaj API'si yoktur.",
+            "Türkçe veya İngilizce. Tepsi penceresi, menü çubuğu ve araç aynı anahtarı kullanır.",
           ],
           limitTitle: "Uydurmadığı şey",
-          limit: "OpenCode Go, DeepSeek, Cursor ve Antigravity'nin hepsi kullanılma yüzdesi yayınlamaz. Uygulama taşıdığı trafik için belirteç ve tahmini maliyet gösterir ve yüzde yoksa bunu söyler. Araştırma notları: son altı aydaki en yakın 25 proje.",
+          limit: "Claude Desktop sohbeti kendi şifreli oturumunu tutar; kimlik değişimi Claude Code'u ve VS Code eklentisini günceller, o sohbeti değil. Cursor yönlendirilmez. Antigravity'nin Google istemci kimliği uygulamaya yazılır, git deposunda durmaz. Maliyetler tahmindir. Derlemeler imzasızdır; güncelleme sessiz kurulum değil, indirmedir. Tam liste docs/LIMITATIONS.md içindedir.",
           foot: "Yalnızca bu bilgisayar. Sırlar işletim sistemi anahtarlığında kalır. MIT lisansı.",
         },
       };
@@ -165,6 +171,9 @@
         document.title = "Claude Account Pilot";
         document.getElementById("title").textContent = text.title;
         document.getElementById("lead").textContent = text.lead;
+        const shot = document.getElementById("shot");
+        shot.src = text.shot;
+        shot.alt = text.shotAlt;
         document.getElementById("release").textContent = text.release;
         document.getElementById("source").textContent = text.source;
         document.getElementById("how-title").textContent = text.howTitle;

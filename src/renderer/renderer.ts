@@ -68,6 +68,7 @@ interface PublicState {
   activeLabel: string;
   activePercent: number | null;
   message?: { text: string; warn?: boolean };
+  updateNotice?: { version: string; url: string } | null;
   onboarded: boolean;
   days: Array<{ day: string; inputTokens: number; outputTokens: number; costUsd: number; requests: number }>;
   models: Array<{ model: string; inputTokens: number; outputTokens: number; costUsd: number; requests: number }>;
@@ -108,6 +109,8 @@ interface PilotBridge {
   startAntigravityLogin: () => Promise<{ ok: boolean }>;
   setAntigravityClient: (input: { clientId: string; clientSecret: string }) => Promise<void>;
   dismissWizard: () => Promise<void>;
+  exportData: () => Promise<{ ok: boolean }>;
+  checkUpdate: () => Promise<{ version: string; url: string } | null>;
   openMain: () => Promise<void>;
   onState: (listener: (state: PublicState) => void) => () => void;
 }
@@ -444,6 +447,7 @@ function renderProxy(): void {
   if (banner) {
     const parts = [];
     if (state.encryptionWarning) parts.push(t("status.encryptionWarn"));
+    if (state.updateNotice) parts.push(t("update.available", { version: state.updateNotice.version }));
     if (state.message?.text) parts.push(state.message.text);
     banner.textContent = parts.join(" ");
     banner.classList.toggle("warn", Boolean(state.encryptionWarning || state.message?.warn));
@@ -546,12 +550,12 @@ function renderBreakdown(): void {
   if (!state) return;
   renderTable(
     "#by-model",
-    [t("breakdown.model"), t("breakdown.tokens"), t("breakdown.cost"), t("breakdown.requests")],
+    [t("breakdown.modelName"), t("breakdown.tokens"), t("breakdown.cost"), t("breakdown.requests")],
     state.models.map((row) => [row.model, tokens(row.inputTokens + row.outputTokens), money(row.costUsd), String(row.requests)]),
   );
   renderTable(
     "#by-day",
-    [t("breakdown.day"), t("breakdown.tokens"), t("breakdown.cost"), t("breakdown.requests")],
+    [t("breakdown.dayName"), t("breakdown.tokens"), t("breakdown.cost"), t("breakdown.requests")],
     state.days.map((row) => [row.day, tokens(row.inputTokens + row.outputTokens), money(row.costUsd), String(row.requests)]),
   );
 }
@@ -750,6 +754,8 @@ function bind(): void {
     void window.pilot.startClaudeLogin();
   });
   document.querySelector("#wizard-skip")?.addEventListener("click", () => void window.pilot.dismissWizard());
+  document.querySelector("#export-data")?.addEventListener("click", () => void window.pilot.exportData());
+  document.querySelector("#check-update")?.addEventListener("click", () => void window.pilot.checkUpdate());
   document.querySelectorAll<HTMLButtonElement>(".nav button").forEach((button) => {
     button.addEventListener("click", () => {
       panel = button.dataset.panel ?? "dashboard";

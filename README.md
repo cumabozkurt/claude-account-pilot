@@ -22,9 +22,11 @@ The design comes from a pass over the 25 most-starred similar projects updated i
 
 | English | Türkçe |
 |---|---|
-| ![Main screen in English](docs/images/overview-en.png) | ![Ana ekran Türkçe](docs/images/overview-tr.png) |
+| ![Dashboard in English](docs/images/overview-en.png) | ![Pano Türkçe](docs/images/overview-tr.png) |
 
-The amber line in these captures is the headless Linux session used to take them: it has no OS secret store. On a normal macOS, Windows, or desktop Linux login the same keys go into the system keychain and that line stays hidden.
+![A short pass through Dashboard, Accounts, Routes, Log, and Settings](docs/images/tour.gif)
+
+The numbers in these pictures are a local demo (`ada@example.com`, no live login) so the chart has a line to draw. The amber line is the headless Linux session used to take them: it has no OS secret store. On a normal macOS, Windows, or desktop Linux login the same keys go into the system keychain and that line stays hidden.
 
 ---
 
@@ -60,7 +62,7 @@ This app is the small control surface for that: accounts, providers, and model r
 | Model routes | First enabled glob wins. The built-in rules send `*haiku*` to OpenCode Go `deepseek-v4-flash` or to DeepSeek `deepseek-chat`. Both ship **off**. |
 | Codex, OpenRouter, Gemini, Antigravity | Codex reuses `~/.codex/auth.json` and refreshes it when the access token is expired. OpenRouter and Gemini speak OpenAI chat. Antigravity uses a Google login and the daily Cloud Code host only. Each route can name a fallback. |
 | Cursor | Detected only. There is no stable messages API, so a Cursor hop is skipped. Give the route a fallback. |
-| Numbers | Percent when a provider publishes one, plus input/output tokens, cache tokens, and an **estimated** USD cost. |
+| Numbers | Percent when a provider publishes one, plus input/output tokens, cache tokens, and an **estimated** USD cost. The dashboard charts quota over time and breaks cost down by model and by day. |
 | Tray | Menu-bar / system tray, percent in the macOS menu bar, optional always-on-top widget on every platform. |
 | Claude settings | One button writes `ANTHROPIC_BASE_URL` into `~/.claude/settings.json` (the file the CLI and the VS Code extension read) and can restore the backup. A second action writes the chosen subscription into `~/.claude/.credentials.json` and, on macOS, the Claude Code keychain item, for clients that ignore the proxy. |
 | Languages | English and Turkish. OS language on first launch, switch remembered. |
@@ -87,9 +89,9 @@ Closing the window leaves the proxy running. Quit from the tray menu.
 
 ## First run
 
-1. Open the app. If the system language is Turkish, the interface is Turkish.
-2. Add each Claude account (a label, an API key or a bearer token). Turn on only the ones that should receive traffic.
-3. Click **Write Claude settings**. Restart Claude Code, or close and reopen the extension tab.
+1. Open the app. If the system language is Turkish, the interface is Turkish. The EN/TR switch is remembered.
+2. The first screen offers a Claude Pro/Max login (paste the code) or an import of `~/.claude/.credentials.json`. An API key still works. Turn on only the accounts that should receive traffic.
+3. Click **Write Claude settings** for Claude Code and the VS Code extension. For a client that ignores the proxy, use **Use in Claude Code** on the account. Restart Claude Code, or close and reopen the extension tab.
 4. Or copy the environment block into the shell you launch Claude from:
 
 ```bash
@@ -103,15 +105,15 @@ The local key is only a flag so Claude Code agrees to start. The proxy ignores i
 
 ## The screen
 
-One page, top to bottom:
+Five sections, one window:
 
-- Proxy address, copy-env, write/restore Claude settings, start/stop.
-- Switch threshold and port. Launch at login. Floating widget.
-- Providers, each with a switch and a short note about what that provider can actually report.
-- Accounts, with a quota bar, 5-hour and 7-day tags when they exist, token counts, and estimated cost.
-- Logins found on this computer.
-- Model routes, in priority order.
-- A short activity list (model, provider, account). Not the prompt.
+- **Dashboard.** Proxy address, copy-env, write/restore Claude settings, start/stop. Quota chart. Tokens and estimated cost by model and by day.
+- **Accounts.** Claude and Antigravity login, credential import, each account's quota bar, 5-hour and 7-day tags, and the logins found on this computer.
+- **Routes.** A switch per provider, then model routes in priority order, each with an optional fallback.
+- **Log.** Activity (model, provider, account) and counted requests. Not the prompt.
+- **Settings.** Switch threshold, port, launch at login, floating widget, notifications, export, and the update check.
+
+The tray click opens the same numbers in a small popover. macOS also puts the active percent in the menu bar. The floating widget is optional on every platform.
 
 ## How routing works
 
@@ -167,7 +169,8 @@ Tauri 2 is the other stack that shows up constantly in the research (CC Switch, 
 - Codex quota windows appear only if the upstream sends them. The login file is read, not refreshed, by this app.
 - Cursor has no stable public messages API that preserves tool calls. It is detected, not routed. Details and the other provider limits are in [docs/LIMITATIONS.md](docs/LIMITATIONS.md). Antigravity routes through Google's daily Cloud Code host. OpenRouter and Gemini are OpenAI-compatible hops, with fallbacks on each route.
 - Prices in the cost column are list-price estimates for display.
-- Builds are unsigned.
+- Builds are unsigned. A newer GitHub release is announced; it is not installed silently.
+- Export and `pilot.log` omit prompts and secrets. The log lives in the app's user-data folder.
 - The menu-bar percent is macOS-only. Linux and Windows use the tray tooltip and the optional floating widget, because a global menu bar is not how those desktops work.
 
 ## Development

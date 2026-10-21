@@ -28,6 +28,8 @@ const api = {
   startAntigravityLogin: () => ipcRenderer.invoke("pilot:startAntigravityLogin"),
   setAntigravityClient: (input) => ipcRenderer.invoke("pilot:setAntigravityClient", input),
   dismissWizard: () => ipcRenderer.invoke("pilot:dismissWizard"),
+  exportData: () => ipcRenderer.invoke("pilot:export"),
+  checkUpdate: () => ipcRenderer.invoke("pilot:checkUpdate"),
   openMain: () => ipcRenderer.invoke("pilot:openMain"),
   onState: (listener) => {
     const wrapped = (_event, state) => listener(state);

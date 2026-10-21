@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0] - 2026-10-21
+
+- Export writes a JSON snapshot of accounts, routes, the ledger, and quota history. Secret handles and refresh fingerprints are left out.
+- Activity is appended to `pilot.log` in the app data directory. Lines are short and contain no prompts. The file rotates after 1 MB.
+- On launch, and from Settings, the app checks GitHub for a newer release and links to it. Unsigned builds are not installed by themselves.
+- The docs site and both READMEs describe the subscription login, the routed providers, and the limits that are still real.
+
 ## [0.5.0] - 2026-10-21
 
 - The window is split into Dashboard, Accounts, Routes, Log, and Settings. The first launch shows a short wizard until an account exists or it is skipped.
