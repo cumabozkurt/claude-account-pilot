@@ -10,7 +10,7 @@ import { applyClaudeBaseUrl, claudeEnvSnippet, restoreClaudeSettings } from "../
 import { loadConfig, saveConfig } from "../core/config.js";
 import { captureDisk, claudeCodeOwns, keychainPlan, readCredentialsRaw, restoreCredentialsFile, writeCredentialsFile } from "../core/credential-swap.js";
 import { DISCOVERED_CLAUDE, DISCOVERED_CODEX, readCodexAuth } from "../core/credentials.js";
-import { appendSample, type QuotaSample } from "../core/history.js";
+import { appendSample, usageByDay, usageByModel, type QuotaSample } from "../core/history.js";
 import { bindingReset, evaluateAlerts, percentAfterReset } from "../core/monitor.js";
 import {
   accessTokenFromSecret,
@@ -215,12 +215,35 @@ function publicState() {
     activeLabel: active?.label ?? "",
     activePercent: activeQuota?.percent ?? (active ? runtime.percentByAccount[active.id] ?? null : null),
     message: flash,
+    onboarded: config.onboarded,
+    days: usageByDay(
+      (ledger.rows ?? []).map((row) => ({
+        day: row.at.slice(0, 10),
+        model: row.model,
+        inputTokens: row.inputTokens,
+        outputTokens: row.outputTokens,
+        costUsd: row.costUsd,
+        requests: 1,
+      })),
+    ),
+    models: usageByModel(
+      (ledger.rows ?? []).map((row) => ({
+        day: row.at.slice(0, 10),
+        model: row.model,
+        inputTokens: row.inputTokens,
+        outputTokens: row.outputTokens,
+        costUsd: row.costUsd,
+        requests: 1,
+      })),
+    ),
+    requests: (ledger.rows ?? []).slice(-40).reverse(),
+    history,
   };
 }
 
 function publish(): void {
   const state = publicState();
-  for (const window of [mainWindow, widgetWindow]) {
+  for (const window of [mainWindow, widgetWindow, popoverWindow]) {
     if (window && !window.isDestroyed()) window.webContents.send("pilot:state", state);
   }
   refreshTray(state.lang, state.activePercent, state.activeLabel);
@@ -459,6 +482,37 @@ async function probeQuotas(): Promise<void> {
   publish();
 }
 
+let popoverWindow: BrowserWindow | null = null;
+
+function togglePopover(): void {
+  if (popoverWindow && !popoverWindow.isDestroyed() && popoverWindow.isVisible()) {
+    popoverWindow.hide();
+    return;
+  }
+  if (!popoverWindow || popoverWindow.isDestroyed()) {
+    popoverWindow = new BrowserWindow({
+      width: 320,
+      height: 420,
+      show: false,
+      frame: false,
+      resizable: false,
+      skipTaskbar: true,
+      alwaysOnTop: true,
+      backgroundColor: "#fffdf8",
+      webPreferences: {
+        preload: preloadPath,
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: false,
+      },
+    });
+    void popoverWindow.loadFile(rendererHtml, { query: { popover: "1" } });
+    popoverWindow.on("blur", () => popoverWindow?.hide());
+  }
+  popoverWindow.show();
+  popoverWindow.focus();
+}
+
 function showMain(): void {
   if (!mainWindow || mainWindow.isDestroyed()) createMainWindow();
   mainWindow?.show();
@@ -647,6 +701,7 @@ function registerIpc(): void {
       authKind: input.authKind === "oauth" ? "oauth" : "api-key",
     });
     config.providersEnabled[input.provider] = true;
+    config.onboarded = true;
     flash = { text: translate(config.lang ?? "en", "status.saved") };
     persist();
     publish();
@@ -858,6 +913,7 @@ function registerIpc(): void {
         externalId: tokens.projectId,
       });
       config.providersEnabled.antigravity = true;
+      config.onboarded = true;
       flash = { text: translate(config.lang ?? "en", "oauth.saved") };
       persist();
       publish();
@@ -868,6 +924,11 @@ function registerIpc(): void {
       publish();
       return { ok: false };
     }
+  });
+  ipcMain.handle("pilot:dismissWizard", () => {
+    config.onboarded = true;
+    persist();
+    publish();
   });
   ipcMain.handle("pilot:openMain", () => showMain());
 }
@@ -908,6 +969,7 @@ function addManagedClaude(blob: NonNullable<ReturnType<typeof blobFromSecret>>, 
     externalId: blob.accountUuid,
   });
   config.providersEnabled.claude = true;
+  config.onboarded = true;
 }
 
 function importDiscovered(provider: ProviderId): void {
@@ -928,6 +990,7 @@ function importDiscovered(provider: ProviderId): void {
       baseUrl: login.kind === "apikey" ? "https://api.openai.com/v1" : undefined,
     });
     config.providersEnabled.codex = true;
+    config.onboarded = true;
   }
     if (provider === "claude" && !config.accounts.some((account) => account.secretRef === DISCOVERED_CLAUDE)) {
     const raw = readCredentialsRaw(home());
@@ -945,6 +1008,7 @@ function importDiscovered(provider: ProviderId): void {
       externalId: blob?.accountUuid,
     });
     config.providersEnabled.claude = true;
+    config.onboarded = true;
   }
 }
 
@@ -976,7 +1040,7 @@ if (!gotLock) {
     if (icon.isEmpty()) icon = nativeImage.createEmpty();
     else icon = icon.resize({ width: 18, height: 18 });
     tray = new Tray(icon);
-    tray.on("click", () => showMain());
+    tray.on("click", () => togglePopover());
     registerIpc();
     app.setLoginItemSettings({ openAtLogin: config.launchAtLogin });
     await startListening();

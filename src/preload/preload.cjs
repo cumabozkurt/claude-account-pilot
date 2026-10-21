@@ -27,6 +27,7 @@ const api = {
   restoreClaudeCredentials: () => ipcRenderer.invoke("pilot:restoreClaudeCredentials"),
   startAntigravityLogin: () => ipcRenderer.invoke("pilot:startAntigravityLogin"),
   setAntigravityClient: (input) => ipcRenderer.invoke("pilot:setAntigravityClient", input),
+  dismissWizard: () => ipcRenderer.invoke("pilot:dismissWizard"),
   openMain: () => ipcRenderer.invoke("pilot:openMain"),
   onState: (listener) => {
     const wrapped = (_event, state) => listener(state);

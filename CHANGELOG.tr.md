@@ -1,5 +1,11 @@
 # Değişiklik günlüğü
 
+## [0.5.0] - 2026-10-21
+
+- Pencere Pano, Hesaplar, Rotalar, Günlük ve Ayarlar olarak ayrıldı. İlk açılışta, bir hesap eklenene veya geçilene kadar kısa bir sihirbaz görünür.
+- Pano kota geçmişini ve modele ve güne göre belirteç ile tahmini maliyet tablolarını çizer. Günlük, sayılmış istekleri listeler. İstem metni hâlâ saklanmaz.
+- Tepsi tıklaması küçük bir açılır pencere açar (kota, son satırlar, Aç). Menü ana pencereyi açmaya ve çıkmaya devam eder.
+
 ## [0.4.0] - 2026-10-21
 
 - Rotalar bir yedek sağlayıcı ve model alabilir. Cursor hâlâ çağrılmaz. Cursor'a bakan bir rota, yedek varsa hata vermek yerine yedeği kullanır.

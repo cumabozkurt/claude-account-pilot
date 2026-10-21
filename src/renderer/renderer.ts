@@ -68,6 +68,11 @@ interface PublicState {
   activeLabel: string;
   activePercent: number | null;
   message?: { text: string; warn?: boolean };
+  onboarded: boolean;
+  days: Array<{ day: string; inputTokens: number; outputTokens: number; costUsd: number; requests: number }>;
+  models: Array<{ model: string; inputTokens: number; outputTokens: number; costUsd: number; requests: number }>;
+  requests: Array<{ at: string; accountId: string; model: string; inputTokens: number; outputTokens: number; costUsd: number }>;
+  history: Array<{ at: string; accountId: string; percent: number | null }>;
 }
 
 interface PilotBridge {
@@ -102,6 +107,7 @@ interface PilotBridge {
   restoreClaudeCredentials: () => Promise<void>;
   startAntigravityLogin: () => Promise<{ ok: boolean }>;
   setAntigravityClient: (input: { clientId: string; clientSecret: string }) => Promise<void>;
+  dismissWizard: () => Promise<void>;
   openMain: () => Promise<void>;
   onState: (listener: (state: PublicState) => void) => () => void;
 }
@@ -112,8 +118,11 @@ declare global {
   }
 }
 
-const widgetMode = new URLSearchParams(location.search).has("widget");
+const params = new URLSearchParams(location.search);
+const widgetMode = params.has("widget");
+const popoverMode = params.has("popover");
 let state: PublicState | null = null;
+let panel = "dashboard";
 
 function t(key: I18nKey | string, vars?: Record<string, string | number>): string {
   return translate(state?.lang ?? "en", key as I18nKey, vars);
@@ -457,6 +466,155 @@ function renderWidget(): void {
   }
 }
 
+function renderChart(): void {
+  const root = document.querySelector("#chart");
+  if (!root || !state) return;
+  root.replaceChildren();
+  const series = new Map<string, Array<number | null>>();
+  for (const sample of state.history) {
+    const list = series.get(sample.accountId) ?? [];
+    list.push(sample.percent);
+    series.set(sample.accountId, list);
+  }
+  const width = 640;
+  const height = 140;
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svg.setAttribute("class", "chart");
+  const ids = [...series.keys()];
+  if (ids.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "hint";
+    empty.textContent = t("chart.empty");
+    root.append(empty);
+    return;
+  }
+  ids.forEach((id, seriesIndex) => {
+    const points = (series.get(id) ?? []).filter((point): point is number => point != null).slice(-48);
+    if (points.length < 2) return;
+    const step = width / (points.length - 1);
+    const d = points
+      .map((value, index) => {
+        const x = (index * step).toFixed(1);
+        const y = (height - 8 - (Math.max(0, Math.min(100, value)) / 100) * (height - 16)).toFixed(1);
+        return `${index === 0 ? "M" : "L"}${x} ${y}`;
+      })
+      .join(" ");
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", d);
+    path.setAttribute("fill", "none");
+    path.setAttribute("stroke", seriesIndex === 0 ? "currentColor" : "#2e7d4f");
+    path.setAttribute("stroke-width", "2");
+    svg.append(path);
+  });
+  root.append(svg);
+}
+
+function renderTable(selector: string, headers: string[], rows: string[][]): void {
+  const root = document.querySelector(selector);
+  if (!root) return;
+  root.replaceChildren();
+  if (rows.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "hint";
+    empty.textContent = t("chart.empty");
+    root.append(empty);
+    return;
+  }
+  const table = document.createElement("table");
+  table.className = "table";
+  const head = document.createElement("tr");
+  for (const header of headers) {
+    const cell = document.createElement("th");
+    cell.textContent = header;
+    head.append(cell);
+  }
+  table.append(head);
+  for (const row of rows) {
+    const line = document.createElement("tr");
+    for (const value of row) {
+      const cell = document.createElement("td");
+      cell.textContent = value;
+      line.append(cell);
+    }
+    table.append(line);
+  }
+  root.append(table);
+}
+
+function renderBreakdown(): void {
+  if (!state) return;
+  renderTable(
+    "#by-model",
+    [t("breakdown.model"), t("breakdown.tokens"), t("breakdown.cost"), t("breakdown.requests")],
+    state.models.map((row) => [row.model, tokens(row.inputTokens + row.outputTokens), money(row.costUsd), String(row.requests)]),
+  );
+  renderTable(
+    "#by-day",
+    [t("breakdown.day"), t("breakdown.tokens"), t("breakdown.cost"), t("breakdown.requests")],
+    state.days.map((row) => [row.day, tokens(row.inputTokens + row.outputTokens), money(row.costUsd), String(row.requests)]),
+  );
+}
+
+function renderRequests(): void {
+  const root = document.querySelector("#requests");
+  if (!root || !state) return;
+  root.replaceChildren();
+  if (state.requests.length === 0) {
+    const item = document.createElement("li");
+    item.textContent = t("log.empty");
+    root.append(item);
+    return;
+  }
+  for (const row of state.requests) {
+    const account = state.accounts.find((item) => item.id === row.accountId);
+    const item = document.createElement("li");
+    const time = new Date(row.at).toLocaleString(state.lang === "tr" ? "tr-TR" : "en-US");
+    item.textContent = `${time} · ${row.model} · ${account?.label ?? row.accountId} · ${tokens(row.inputTokens + row.outputTokens)} · ${money(row.costUsd)}`;
+    root.append(item);
+  }
+}
+
+function renderWizard(): void {
+  const wizard = document.querySelector<HTMLElement>("#wizard");
+  if (!wizard || !state) return;
+  wizard.hidden = state.onboarded || panel !== "dashboard";
+}
+
+function showPanel(): void {
+  document.querySelectorAll<HTMLElement>("[data-panel]").forEach((node) => {
+    const mine = node.dataset.panel === panel || node.tagName === "BUTTON";
+    if (node.tagName === "BUTTON") {
+      node.setAttribute("aria-pressed", String(node.dataset.panel === panel));
+      return;
+    }
+    node.hidden = !mine;
+  });
+}
+
+function renderPopover(): void {
+  if (!state) return;
+  const label = document.querySelector("#popover-label");
+  if (label) label.textContent = state.activeLabel || t("widget.idle");
+  const fill = document.querySelector<HTMLElement>("#popover-bar");
+  if (fill) {
+    fill.style.width = `${Math.max(0, Math.min(100, state.activePercent ?? 0))}%`;
+    fill.className = barClass(state.activePercent);
+  }
+  const meta = document.querySelector("#popover-meta");
+  if (meta) {
+    meta.textContent = state.activePercent == null ? t("accounts.noQuota") : t("accounts.percent", { percent: state.activePercent });
+  }
+  const list = document.querySelector("#popover-activity");
+  if (!list) return;
+  list.replaceChildren();
+  for (const event of state.activity.slice(0, 4)) {
+    const item = document.createElement("li");
+    item.textContent = t(event.key as I18nKey, event.vars);
+    list.append(item);
+  }
+}
+
 function render(): void {
   if (!state) return;
   applyStatic();
@@ -464,12 +622,21 @@ function render(): void {
     renderWidget();
     return;
   }
+  if (popoverMode) {
+    renderPopover();
+    return;
+  }
+  showPanel();
+  renderWizard();
   renderProxy();
+  renderChart();
+  renderBreakdown();
   renderProviders();
   renderAccounts();
   renderDiscover();
   renderRoutes();
   renderActivity();
+  renderRequests();
   fillProviderSelects();
 }
 
@@ -577,18 +744,33 @@ function bind(): void {
     });
   });
   document.querySelector("#widget-open")?.addEventListener("click", () => void window.pilot.openMain());
+  document.querySelector("#popover-open")?.addEventListener("click", () => void window.pilot.openMain());
+  document.querySelector("#wizard-login")?.addEventListener("click", () => {
+    panel = "accounts";
+    void window.pilot.startClaudeLogin();
+  });
+  document.querySelector("#wizard-skip")?.addEventListener("click", () => void window.pilot.dismissWizard());
+  document.querySelectorAll<HTMLButtonElement>(".nav button").forEach((button) => {
+    button.addEventListener("click", () => {
+      panel = button.dataset.panel ?? "dashboard";
+      render();
+    });
+  });
 }
 
 function showShell(): void {
   const app = document.querySelector<HTMLElement>("#app");
   const widget = document.querySelector<HTMLElement>("#widget");
-  if (widgetMode) {
+  const popover = document.querySelector<HTMLElement>("#popover");
+  if (widgetMode || popoverMode) {
     if (app) app.hidden = true;
-    if (widget) widget.hidden = false;
+    if (widget) widget.hidden = !widgetMode;
+    if (popover) popover.hidden = !popoverMode;
     document.body.classList.add("widget-mode");
   } else if (app) {
     app.hidden = false;
     if (widget) widget.hidden = true;
+    if (popover) popover.hidden = true;
   }
 }
 

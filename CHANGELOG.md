@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.5.0] - 2026-10-21
+
+- The window is split into Dashboard, Accounts, Routes, Log, and Settings. The first launch shows a short wizard until an account exists or it is skipped.
+- The dashboard draws quota history and tables of tokens and estimated cost by model and by day. The log lists counted requests. Prompt text is still not stored.
+- The tray click opens a small popover (quota, recent lines, Open). The menu still opens the main window and quits.
+
 ## [0.4.0] - 2026-10-21
 
 - Routes can name a fallback provider and model. Cursor is still not called. A route aimed at Cursor uses the fallback instead of failing when one is set.

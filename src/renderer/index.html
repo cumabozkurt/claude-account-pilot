@@ -20,7 +20,24 @@
         </div>
       </header>
 
-      <section class="card proxy" aria-labelledby="proxy-label">
+      <nav class="nav" aria-label="Sections">
+        <button type="button" data-panel="dashboard" data-i18n="nav.dashboard"></button>
+        <button type="button" data-panel="accounts" data-i18n="nav.accounts"></button>
+        <button type="button" data-panel="routes" data-i18n="nav.routes"></button>
+        <button type="button" data-panel="log" data-i18n="nav.log"></button>
+        <button type="button" data-panel="settings" data-i18n="nav.settings"></button>
+      </nav>
+
+      <section id="wizard" class="card wizard" hidden>
+        <h2 data-i18n="wizard.title"></h2>
+        <p class="hint" data-i18n="wizard.body"></p>
+        <div class="actions">
+          <button type="button" id="wizard-login" class="primary" data-i18n="oauth.open"></button>
+          <button type="button" id="wizard-skip" data-i18n="wizard.skip"></button>
+        </div>
+      </section>
+
+      <section class="card proxy" data-panel="dashboard" aria-labelledby="proxy-label">
         <div class="row spread">
           <div>
             <p id="proxy-label" class="status"><span id="dot" class="dot"></span><span id="proxy-text"></span></p>
@@ -37,7 +54,16 @@
         <p id="banner" class="banner" role="status"></p>
       </section>
 
-      <section class="card">
+      <section class="card" data-panel="dashboard">
+        <h2 data-i18n="chart.title"></h2>
+        <div id="chart"></div>
+        <h2 data-i18n="breakdown.model"></h2>
+        <div id="by-model"></div>
+        <h2 data-i18n="breakdown.day"></h2>
+        <div id="by-day"></div>
+      </section>
+
+      <section class="card" data-panel="settings">
         <div class="row spread">
           <label class="field grow">
             <span data-i18n="threshold.label"></span>
@@ -56,7 +82,7 @@
         </div>
       </section>
 
-      <section class="card">
+      <section class="card" data-panel="accounts">
         <h2 data-i18n="oauth.title"></h2>
         <p class="hint" data-i18n="oauth.help"></p>
         <p class="hint" data-i18n="oauth.desktopLimit"></p>
@@ -93,13 +119,13 @@
         <p class="hint" data-i18n="oauth.importHelp"></p>
       </section>
 
-      <section class="card">
+      <section class="card" data-panel="routes">
         <h2 data-i18n="providers.title"></h2>
         <p class="hint" data-i18n="providers.help"></p>
         <div id="providers" class="providers"></div>
       </section>
 
-      <section class="card">
+      <section class="card" data-panel="accounts">
         <h2 data-i18n="accounts.title"></h2>
         <div id="accounts"></div>
         <form id="add-account" class="form">
@@ -126,12 +152,12 @@
         </form>
       </section>
 
-      <section class="card">
+      <section class="card" data-panel="accounts">
         <h2 data-i18n="discover.title"></h2>
         <div id="discover"></div>
       </section>
 
-      <section class="card">
+      <section class="card" data-panel="routes">
         <h2 data-i18n="routes.title"></h2>
         <p class="hint" data-i18n="routes.help"></p>
         <div id="routes"></div>
@@ -160,9 +186,11 @@
         </form>
       </section>
 
-      <section class="card">
+      <section class="card" data-panel="log">
         <h2 data-i18n="activity.title"></h2>
         <ul id="activity" class="activity"></ul>
+        <h2 data-i18n="log.requests"></h2>
+        <ul id="requests" class="activity"></ul>
       </section>
 
       <footer>
@@ -170,6 +198,15 @@
         <p class="hint" data-i18n="footer.hide"></p>
       </footer>
     </main>
+
+    <section id="popover" class="widget" hidden>
+      <p class="eyebrow" data-i18n="popover.title"></p>
+      <p id="popover-label"></p>
+      <div class="bar"><span id="popover-bar"></span></div>
+      <p id="popover-meta" class="hint"></p>
+      <ul id="popover-activity" class="activity"></ul>
+      <button type="button" id="popover-open" class="primary" data-i18n="widget.open"></button>
+    </section>
 
     <section id="widget" class="widget" hidden>
       <p class="eyebrow" data-i18n="widget.title"></p>

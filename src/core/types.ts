@@ -93,6 +93,8 @@ export interface AppConfig {
   syncedAccountId: string | null;
   /** Antigravity OAuth client id. The matching secret lives in the keychain, not here. */
   antigravityClientId: string;
+  /** True after the first-run wizard is dismissed or an account is added. */
+  onboarded: boolean;
   providersEnabled: Record<ProviderId, boolean>;
   accounts: Account[];
   routes: ModelRoute[];
@@ -130,6 +132,7 @@ export function defaultConfig(): AppConfig {
     notify: true,
     syncedAccountId: null,
     antigravityClientId: "",
+    onboarded: false,
     providersEnabled: {
       claude: true,
       "opencode-go": false,
