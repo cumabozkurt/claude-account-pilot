@@ -1,5 +1,10 @@
 # Değişiklik günlüğü
 
+## [0.2.0] - 2026-10-21
+
+- Kota pencereleri, etkin hesap ve hareket listesi diske yazılır ve yeniden açılınca geri gelir. Dosyada sır yoktur.
+- Pages iş akışı ilk çalıştığında GitHub Pages'i açar.
+
 ## [0.1.0] - 2026-10-21
 
 İlk herkese açık derleme.

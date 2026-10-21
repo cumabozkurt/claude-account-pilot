@@ -13,6 +13,7 @@ import { detectLang, translate } from "../core/i18n.js";
 import { emptyLedger, loadLedger, recordUsage, saveLedger } from "../core/ledger.js";
 import type { RuntimeSnapshot } from "../core/plan.js";
 import { startProxy, type RunningProxy } from "../core/proxy.js";
+import { loadRuntime, saveRuntime, type PersistedRuntime } from "../core/runtime-file.js";
 import { windowsFromUsageJson, worstPercent } from "../core/quota.js";
 import {
   PROVIDER_IDS,
@@ -39,6 +40,7 @@ let config: AppConfig = defaultConfig();
 let secrets: SecretStore = null as unknown as SecretStore;
 let ledgerPath = "";
 let configPath = "";
+let runtimePath = "";
 let ledger = emptyLedger();
 let proxy: RunningProxy | null = null;
 let mainWindow: BrowserWindow | null = null;
@@ -64,6 +66,23 @@ function home(): string {
 
 function persist(): void {
   saveConfig(configPath, config);
+}
+
+function snapshotRuntime(): PersistedRuntime {
+  const quotas: PersistedRuntime["quotas"] = {};
+  for (const [id, quota] of quotaNotes) quotas[id] = quota;
+  return {
+    version: 1,
+    activeByProvider: { ...runtime.activeByProvider },
+    percentByAccount: { ...runtime.percentByAccount },
+    quotas,
+    activity: activity.slice(0, 40),
+  };
+}
+
+function persistRuntime(): void {
+  if (!runtimePath) return;
+  saveRuntime(runtimePath, snapshotRuntime());
 }
 
 function pushActivity(event: ActivityEvent): void {
@@ -159,6 +178,7 @@ async function startListening(): Promise<void> {
         onQuota: (accountId, percent, windows) => {
           runtime.percentByAccount[accountId] = percent;
           quotaNotes.set(accountId, { windows, percent, source: "headers" });
+          persistRuntime();
           publish();
         },
         onUsage: (accountId, model, usage) => {
@@ -178,6 +198,7 @@ async function startListening(): Promise<void> {
         onSwitch: () => undefined,
         onActivity: (event) => {
           pushActivity(event);
+          persistRuntime();
           publish();
         },
         onCooldown: (accountId, until) => {
@@ -185,6 +206,7 @@ async function startListening(): Promise<void> {
         },
         rememberActive: (provider, accountId) => {
           runtime.activeByProvider[provider] = accountId;
+          persistRuntime();
         },
       },
       config.proxyPort,
@@ -221,6 +243,7 @@ async function probeQuotas(): Promise<void> {
           const percent = worstPercent(windows);
           if (percent != null) runtime.percentByAccount[account.id] = percent;
           quotaNotes.set(account.id, { windows, percent, source: "provider" });
+          persistRuntime();
         }
       } else if (account.provider === "deepseek") {
         const response = await fetch("https://api.deepseek.com/user/balance", {
@@ -240,6 +263,7 @@ async function probeQuotas(): Promise<void> {
               source: "provider",
               note: `${info.total_balance} ${info.currency ?? ""}`.trim(),
             });
+            persistRuntime();
           }
         }
       }
@@ -549,9 +573,15 @@ if (!gotLock) {
     const dir = app.getPath("userData");
     configPath = join(dir, "config.json");
     ledgerPath = join(dir, "ledger.json");
+    runtimePath = join(dir, "runtime.json");
     config = loadConfig(configPath);
     if (!config.lang) config.lang = detectLang(app.getLocale());
     runtime.config = config;
+    const stored = loadRuntime(runtimePath);
+    runtime.activeByProvider = stored.activeByProvider;
+    runtime.percentByAccount = stored.percentByAccount;
+    for (const [id, quota] of Object.entries(stored.quotas)) quotaNotes.set(id, quota);
+    activity.push(...stored.activity);
     ledger = loadLedger(ledgerPath);
     secrets = createSecretStore(join(dir, "secrets.bin"));
     persist();

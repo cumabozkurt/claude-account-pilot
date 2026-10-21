@@ -1,6 +1,6 @@
 {
   "name": "claude-account-pilot",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Desktop app that watches Claude account quotas and switches at 98%, with a local proxy that can route models to OpenCode Go, DeepSeek, Codex and other providers. English and Turkish. macOS, Windows, Linux.",
   "license": "MIT",
   "type": "module",
