@@ -1,0 +1,48 @@
+{
+  "name": "claude-account-pilot",
+  "version": "0.1.0",
+  "description": "Desktop app that watches Claude account quotas and switches at 98%, with a local proxy that can route models to OpenCode Go, DeepSeek, Codex and other providers. English and Turkish. macOS, Windows, Linux.",
+  "license": "MIT",
+  "type": "module",
+  "author": "Cuma Bozkurt",
+  "homepage": "https://cumabozkurt.github.io/claude-account-pilot/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cumabozkurt/claude-account-pilot.git"
+  },
+  "bugs": {
+    "url": "https://github.com/cumabozkurt/claude-account-pilot/issues"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "anthropic",
+    "quota",
+    "proxy",
+    "router",
+    "electron",
+    "opencode",
+    "deepseek",
+    "codex",
+    "desktop"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "main": "dist/main/index.js",
+  "scripts": {
+    "compile": "tsc -p tsconfig.json && node scripts/bundle-renderer.mjs && node scripts/copy-static.mjs",
+    "build": "npm run compile",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run compile && node scripts/run-tests.mjs",
+    "start": "npm run compile && electron .",
+    "dist": "npm run compile && electron-builder --publish never"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8",
+    "esbuild": "^0.24.2",
+    "typescript": "^5.6.3"
+  }
+}

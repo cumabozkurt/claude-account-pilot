@@ -1,0 +1,97 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f3efe6;
+  --card: #fffdf8;
+  --ink: #1d1a16;
+  --muted: #655e55;
+  --line: #e2d9cc;
+  --accent: #9a3d1a;
+  --accent-ink: #fffaf6;
+  --ok: #2e7d4f;
+  --warn: #a15c07;
+  --bad: #a12626;
+  --bar: #eadfce;
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161411;
+    --card: #221f1b;
+    --ink: #f6f1e8;
+    --muted: #c3b8aa;
+    --line: #3a342c;
+    --accent: #e07a45;
+    --accent-ink: #1a100c;
+    --bar: #3a342c;
+  }
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+}
+button, input, select { font: inherit; color: inherit; }
+button {
+  border: 1px solid var(--line);
+  background: transparent;
+  border-radius: 999px;
+  padding: 0.4rem 0.8rem;
+  cursor: pointer;
+}
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+.app { max-width: 980px; margin: 0 auto; padding: 1.25rem 1.25rem 2rem; }
+.widget { padding: 0.9rem 1rem 1rem; }
+.top, .row, .spread, .actions, .checks, .form, .account-head { display: flex; gap: 0.75rem; align-items: center; }
+.top, .spread, .account-head { justify-content: space-between; }
+.actions, .form, .checks { flex-wrap: wrap; }
+.top { align-items: flex-start; }
+h1 { font-size: 1.6rem; margin: 0; letter-spacing: -0.03em; }
+h2 { font-size: 1rem; margin: 0 0 0.35rem; }
+.eyebrow { margin: 0; text-transform: uppercase; letter-spacing: 0.14em; font-size: 0.72rem; color: var(--accent); }
+.sub, .hint, footer { color: var(--muted); }
+.hint, footer p { margin: 0.35rem 0 0; font-size: 0.86rem; }
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 0.9rem 1rem 1rem;
+  margin-top: 0.8rem;
+}
+.mono { font-family: ui-monospace, "Cascadia Code", monospace; margin: 0.2rem 0; }
+.dot { width: 0.6rem; height: 0.6rem; border-radius: 50%; display: inline-block; background: var(--bad); margin-right: 0.4rem; }
+.dot.on { background: var(--ok); }
+.status { margin: 0; font-weight: 600; }
+.field { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.85rem; }
+.field.grow, .form .field.grow { flex: 1; }
+input, select {
+  border: 1px solid var(--line);
+  background: transparent;
+  border-radius: 10px;
+  padding: 0.45rem 0.55rem;
+  min-width: 0;
+}
+.lang button { min-width: 2.6rem; }
+.providers, .account, .route { display: grid; gap: 0.55rem; }
+.provider, .account, .route {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0.7rem 0.75rem;
+}
+.provider { display: block; }
+.provider .switch, .account .switch { float: right; }
+.bar { height: 8px; background: var(--bar); border-radius: 99px; overflow: hidden; margin: 0.45rem 0; clear: both; }
+.bar > span { display: block; height: 100%; background: var(--ok); width: 0; }
+.bar > span.warn { background: var(--warn); }
+.bar > span.bad { background: var(--bad); }
+.meta { color: var(--muted); font-size: 0.86rem; margin: 0; }
+.banner { min-height: 1.2rem; margin: 0.6rem 0 0; }
+.banner.warn { color: var(--warn); }
+.activity { list-style: none; padding: 0; margin: 0; }
+.activity li { padding: 0.28rem 0; border-top: 1px solid var(--line); font-size: 0.9rem; }
+.tag { font-size: 0.75rem; border: 1px solid var(--line); border-radius: 99px; padding: 0.05rem 0.4rem; }
+.windows { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.35rem; }
+footer { margin-top: 1rem; }

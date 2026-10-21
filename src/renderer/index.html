@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Claude Account Pilot</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main id="app" class="app" hidden>
+      <header class="top">
+        <div>
+          <p class="eyebrow">Claude</p>
+          <h1 data-i18n="app.title"></h1>
+          <p id="subtitle" class="sub"></p>
+        </div>
+        <div class="lang" role="group" aria-label="Language">
+          <button type="button" id="lang-en" data-lang="en">EN</button>
+          <button type="button" id="lang-tr" data-lang="tr">TR</button>
+        </div>
+      </header>
+
+      <section class="card proxy" aria-labelledby="proxy-label">
+        <div class="row spread">
+          <div>
+            <p id="proxy-label" class="status"><span id="dot" class="dot"></span><span id="proxy-text"></span></p>
+            <p id="proxy-address" class="mono"></p>
+            <p class="hint" data-i18n="proxy.address"></p>
+          </div>
+          <div class="actions">
+            <button type="button" id="copy-env" class="primary" data-i18n="proxy.copy"></button>
+            <button type="button" id="apply-claude" data-i18n="proxy.apply"></button>
+            <button type="button" id="restore-claude" data-i18n="proxy.restore"></button>
+            <button type="button" id="toggle-proxy"></button>
+          </div>
+        </div>
+        <p id="banner" class="banner" role="status"></p>
+      </section>
+
+      <section class="card">
+        <div class="row spread">
+          <label class="field grow">
+            <span data-i18n="threshold.label"></span>
+            <input id="threshold" type="number" min="50" max="99" step="1" />
+          </label>
+          <label class="field">
+            <span data-i18n="settings.port"></span>
+            <input id="port" type="number" min="1" max="65535" step="1" />
+          </label>
+        </div>
+        <p class="hint" data-i18n="threshold.help"></p>
+        <div class="checks">
+          <label><input id="launch" type="checkbox" /> <span data-i18n="settings.launch"></span></label>
+          <label><input id="widget" type="checkbox" /> <span data-i18n="settings.widget"></span></label>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2 data-i18n="providers.title"></h2>
+        <p class="hint" data-i18n="providers.help"></p>
+        <div id="providers" class="providers"></div>
+      </section>
+
+      <section class="card">
+        <h2 data-i18n="accounts.title"></h2>
+        <div id="accounts"></div>
+        <form id="add-account" class="form">
+          <label class="field">
+            <span data-i18n="accounts.label"></span>
+            <input id="acc-label" required maxlength="80" data-i18n-placeholder="form.labelPh" />
+          </label>
+          <label class="field">
+            <span data-i18n="accounts.provider"></span>
+            <select id="acc-provider"></select>
+          </label>
+          <label class="field">
+            <span data-i18n="accounts.authKind"></span>
+            <select id="acc-kind">
+              <option value="api-key" data-i18n="accounts.apiKey"></option>
+              <option value="oauth" data-i18n="accounts.oauth"></option>
+            </select>
+          </label>
+          <label class="field grow">
+            <span data-i18n="accounts.secret"></span>
+            <input id="acc-secret" type="password" required minlength="8" autocomplete="off" data-i18n-placeholder="form.secretPh" />
+          </label>
+          <button type="submit" class="primary" data-i18n="accounts.add"></button>
+        </form>
+      </section>
+
+      <section class="card">
+        <h2 data-i18n="discover.title"></h2>
+        <div id="discover"></div>
+      </section>
+
+      <section class="card">
+        <h2 data-i18n="routes.title"></h2>
+        <p class="hint" data-i18n="routes.help"></p>
+        <div id="routes"></div>
+        <form id="add-route" class="form">
+          <label class="field">
+            <span data-i18n="routes.match"></span>
+            <input id="route-match" required data-i18n-placeholder="form.matchPh" />
+          </label>
+          <label class="field">
+            <span data-i18n="accounts.provider"></span>
+            <select id="route-provider"></select>
+          </label>
+          <label class="field">
+            <span data-i18n="routes.target"></span>
+            <input id="route-model" required data-i18n-placeholder="form.modelPh" />
+          </label>
+          <button type="submit" class="primary" data-i18n="routes.add"></button>
+        </form>
+      </section>
+
+      <section class="card">
+        <h2 data-i18n="activity.title"></h2>
+        <ul id="activity" class="activity"></ul>
+      </section>
+
+      <footer>
+        <p data-i18n="footer.local"></p>
+        <p class="hint" data-i18n="footer.hide"></p>
+      </footer>
+    </main>
+
+    <section id="widget" class="widget" hidden>
+      <p class="eyebrow" data-i18n="widget.title"></p>
+      <p id="widget-label"></p>
+      <div class="bar"><span id="widget-bar"></span></div>
+      <p id="widget-meta" class="hint"></p>
+      <button type="button" id="widget-open" data-i18n="widget.open"></button>
+    </section>
+    <script type="module" src="./renderer.js"></script>
+  </body>
+</html>

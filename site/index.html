@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Claude Account Pilot</title>
+    <meta
+      name="description"
+      content="Desktop app that switches Claude accounts at 98% and can route Haiku to DeepSeek. English and Turkish."
+    />
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f3efe6;
+        --card: #fffdf8;
+        --ink: #1d1a16;
+        --muted: #655e55;
+        --line: #e2d9cc;
+        --accent: #9a3d1a;
+        --accent-ink: #fffaf6;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #161411;
+          --card: #221f1b;
+          --ink: #f6f1e8;
+          --muted: #c3b8aa;
+          --line: #3a342c;
+          --accent: #e07a45;
+          --accent-ink: #1a100c;
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "Segoe UI", system-ui, sans-serif;
+        background: var(--bg);
+        color: var(--ink);
+        line-height: 1.5;
+      }
+      header, main { max-width: 820px; margin: 0 auto; padding: 1.25rem; }
+      header { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; }
+      h1 { font-size: clamp(2rem, 5vw, 3.2rem); letter-spacing: -0.04em; line-height: 1.05; margin: 0.2rem 0; }
+      .eyebrow { margin: 0; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); font-size: 0.75rem; }
+      .lang button {
+        font: inherit;
+        border: 1px solid var(--line);
+        background: transparent;
+        color: inherit;
+        border-radius: 999px;
+        padding: 0.35rem 0.7rem;
+        cursor: pointer;
+      }
+      .lang button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 1rem 1.1rem;
+        margin: 0.8rem 0;
+      }
+      a.button {
+        display: inline-block;
+        background: var(--accent);
+        color: var(--accent-ink);
+        text-decoration: none;
+        border-radius: 999px;
+        padding: 0.55rem 0.9rem;
+        margin-right: 0.4rem;
+      }
+      a.ghost { color: var(--ink); }
+      .muted { color: var(--muted); }
+      code { font-family: ui-monospace, monospace; }
+      ul { padding-left: 1.1rem; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <p class="eyebrow">Claude Code · VS Code · Desktop</p>
+      <div class="lang" role="group" aria-label="Language">
+        <button type="button" id="en" aria-pressed="false">EN</button>
+        <button type="button" id="tr" aria-pressed="false">TR</button>
+      </div>
+    </header>
+    <main>
+      <h1 id="title"></h1>
+      <p id="lead" class="muted"></p>
+      <p>
+        <a class="button" id="release" href="https://github.com/cumabozkurt/claude-account-pilot/releases/latest"></a>
+        <a class="ghost" id="source" href="https://github.com/cumabozkurt/claude-account-pilot"></a>
+      </p>
+      <section class="card">
+        <h2 id="how-title"></h2>
+        <ol id="how"></ol>
+      </section>
+      <section class="card">
+        <h2 id="see-title"></h2>
+        <ul id="see"></ul>
+      </section>
+      <section class="card">
+        <h2 id="limit-title"></h2>
+        <p id="limit" class="muted"></p>
+      </section>
+      <p class="muted" id="foot"></p>
+    </main>
+    <script>
+      const copy = {
+        en: {
+          title: "Switch Claude accounts at 98%.",
+          lead: "A desktop app for macOS, Windows and Linux. It watches every Claude account you add and, through a local proxy, moves traffic to the next available account. Haiku can be sent to DeepSeek on OpenCode Go. Quotas show a percent when one exists, plus tokens and estimated cost.",
+          release: "Download",
+          source: "Source",
+          howTitle: "What you do",
+          how: [
+            "Add the Claude accounts you own.",
+            "Point Claude Code and the VS Code extension at 127.0.0.1.",
+            "Leave it in the tray. At 98% it uses the next account that still has room.",
+          ],
+          seeTitle: "On the one screen",
+          see: [
+            "Providers, models and accounts, each with an on/off switch.",
+            "5-hour and 7-day windows when Claude publishes them.",
+            "A Codex login already on the computer, reused locally.",
+            "Cursor and Antigravity detected, and not pretended to be an API.",
+            "English or Turkish, chosen from the system language the first time.",
+          ],
+          limitTitle: "What it will not invent",
+          limit: "OpenCode Go, DeepSeek, Cursor and Antigravity do not all publish a percent-used quota. The app shows tokens and estimated cost for traffic it carried, and it says when a percent is unavailable. Research notes: the 25 closest projects from the last six months.",
+          foot: "Local only. Secrets stay in the operating system keychain. MIT license.",
+        },
+        tr: {
+          title: "Claude hesapları %98'de değişir.",
+          lead: "macOS, Windows ve Linux için bir masaüstü uygulaması. Eklediğiniz her Claude hesabının kotasını izler ve yerel bir vekil üzerinden trafiği sıradaki uygun hesaba alır. Haiku, OpenCode Go üzerindeki DeepSeek'e gidebilir. Kota, yüzde varsa yüzde olarak, ayrıca belirteç ve tahmini maliyet olarak görünür.",
+          release: "İndir",
+          source: "Kaynak",
+          howTitle: "Ne yaparsınız",
+          how: [
+            "Size ait Claude hesaplarını ekleyin.",
+            "Claude Code ve VS Code eklentisini 127.0.0.1 adresine yönlendirin.",
+            "Tepside kalsın. %98'de hâlâ yeri olan sıradaki hesabı kullanır.",
+          ],
+          seeTitle: "Tek ekranda",
+          see: [
+            "Sağlayıcılar, modeller ve hesaplar; her birinin aç/kapa anahtarı var.",
+            "Claude yayınlıyorsa 5 saat ve 7 gün pencereleri.",
+            "Bilgisayarda açık olan Codex oturumu, yerinde kullanılır.",
+            "Cursor ve Antigravity tespit edilir; API'ymiş gibi davranılmaz.",
+            "Türkçe veya İngilizce; ilk seferde sistem dilinden seçilir.",
+          ],
+          limitTitle: "Uydurmadığı şey",
+          limit: "OpenCode Go, DeepSeek, Cursor ve Antigravity'nin hepsi kullanılma yüzdesi yayınlamaz. Uygulama taşıdığı trafik için belirteç ve tahmini maliyet gösterir ve yüzde yoksa bunu söyler. Araştırma notları: son altı aydaki en yakın 25 proje.",
+          foot: "Yalnızca bu bilgisayar. Sırlar işletim sistemi anahtarlığında kalır. MIT lisansı.",
+        },
+      };
+
+      function detect() {
+        const saved = localStorage.getItem("pilot-lang");
+        if (saved === "tr" || saved === "en") return saved;
+        return (navigator.language || "").toLowerCase().startsWith("tr") ? "tr" : "en";
+      }
+
+      function render(lang) {
+        const text = copy[lang];
+        document.documentElement.lang = lang;
+        document.title = "Claude Account Pilot";
+        document.getElementById("title").textContent = text.title;
+        document.getElementById("lead").textContent = text.lead;
+        document.getElementById("release").textContent = text.release;
+        document.getElementById("source").textContent = text.source;
+        document.getElementById("how-title").textContent = text.howTitle;
+        document.getElementById("see-title").textContent = text.seeTitle;
+        document.getElementById("limit-title").textContent = text.limitTitle;
+        document.getElementById("limit").textContent = text.limit;
+        document.getElementById("foot").textContent = text.foot;
+        const how = document.getElementById("how");
+        const see = document.getElementById("see");
+        how.replaceChildren();
+        see.replaceChildren();
+        for (const line of text.how) {
+          const item = document.createElement("li");
+          item.textContent = line;
+          how.append(item);
+        }
+        for (const line of text.see) {
+          const item = document.createElement("li");
+          item.textContent = line;
+          see.append(item);
+        }
+        document.getElementById("en").setAttribute("aria-pressed", String(lang === "en"));
+        document.getElementById("tr").setAttribute("aria-pressed", String(lang === "tr"));
+        localStorage.setItem("pilot-lang", lang);
+      }
+
+      document.getElementById("en").addEventListener("click", () => render("en"));
+      document.getElementById("tr").addEventListener("click", () => render("tr"));
+      render(detect());
+    </script>
+  </body>
+</html>

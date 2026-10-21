@@ -1,0 +1,39 @@
+appId: dev.cumabozkurt.claudeaccountpilot
+productName: Claude Account Pilot
+copyright: Copyright © 2026 Cuma Bozkurt
+directories:
+  output: release
+files:
+  - dist/**
+  - package.json
+extraMetadata:
+  main: dist/main/index.js
+asar: true
+npmRebuild: false
+mac:
+  category: public.app-category.developer-tools
+  icon: build/icon.png
+  target:
+    - target: dmg
+    - target: zip
+win:
+  icon: build/icon.png
+  target:
+    - target: nsis
+    - target: portable
+linux:
+  icon: build/icon.png
+  category: Development
+  target:
+    - target: AppImage
+    - target: deb
+  maintainer: Cuma Bozkurt
+artifactName: Claude.Account.Pilot-${version}-${os}-${arch}.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  artifactName: Claude.Account.Pilot-Setup-${version}-win-${arch}.${ext}
+portable:
+  artifactName: Claude.Account.Pilot-Portable-${version}-win-${arch}.${ext}
+publish: null
