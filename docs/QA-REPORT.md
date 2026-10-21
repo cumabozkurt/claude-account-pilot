@@ -2,7 +2,7 @@
 
 Independent pass over Claude Account Pilot 1.1.0, with the fixes shipped as 1.2.0. Turkish text is below the English sections.
 
-Local unit and integration tests: **89 passed, 0 failed** (`npm test` on Linux, Node 22, no network). Packaged launch tests run in GitHub Actions on `ubuntu-latest`, `macos-latest`, and `windows-latest` (`.github/workflows/ci.yml` and `.github/workflows/release.yml`). Screenshots and the JSON each process writes are uploaded as the `smoke-*` artifacts.
+Local unit and integration tests: **89 passed, 0 failed** (`npm test` on Linux, Node 22, no network). The packaged matrix is green on commit `5d0f6dd`: [CI run 39649209165](https://github.com/cumabozkurt/claude-account-pilot/actions/runs/39649209165). `npm test` passed on all three runners (89/89 on Linux and macOS; 87 passed and 2 skipped on Windows, where the symlink and hard-link cases are skipped). Screenshots and JSON reports are the `smoke-ubuntu-latest`, `smoke-macos-latest`, and `smoke-windows-latest` artifacts of that run. An earlier run, [39648500735](https://github.com/cumabozkurt/claude-account-pilot/actions/runs/39648500735), failed only in the harness: Linux executed the documentation directory, and the Windows uninstaller had not finished deleting files. The app checks in that run had already passed.
 
 ## What was tested
 
@@ -43,15 +43,13 @@ Reviewed and left as they were:
 
 ## Results per OS
 
-The matrix below is filled from the GitHub Actions run that builds and launches this commit. Screenshots are the `smoke-<os>` artifacts (`linux-appimage-en.png`, `linux-appimage-tr.png`, and the macOS / Windows pairs).
+[Run 39649209165](https://github.com/cumabozkurt/claude-account-pilot/actions/runs/39649209165) on `5d0f6dd`, 2026-10-21. Every smoke line below was `ok`. The temp home was deleted after each launch, and the seeded `settings.json` matched the original bytes. Screenshots: `linux-appimage-en.png`, `linux-appimage-tr.png`, `linux-deb-en.png`, `mac-arm64-en.png`, `mac-arm64-tr.png`, `win-portable-en.png`, `win-portable-tr.png`, `win-setup-en.png`.
 
-| OS | Launch | Proxy `/health` | Tray | settings.json restore | Fake release asset | Uninstall |
+| OS | Launch | Proxy `/health` | Tray | settings.json | Fake release asset | Uninstall |
 |---|---|---|---|---|---|---|
-| Linux | AppImage via `xvfb-run`, then the installed `.deb` | recorded in `smoke-reports/linux-*.json` | required | seeded file restored, temp home deleted | AppImage must select the 9.9.9 asset; `.deb` has no self-replace | `apt-get remove` must delete the binary |
-| macOS | Unzipped `.app` for the runner arch, quarantine attribute cleared | same | required | same | must select the matching mac zip asset | bundle directory deleted |
-| Windows | Portable exe, then NSIS `/S` into `C:\pilot-qa` | same | required | same | must select the portable or setup asset | uninstaller `/S` must delete the exe |
-
-If a cell's JSON has `"ok": false`, that job is the failure of record. This file is updated when that run finishes.
+| Linux | AppImage under Xvfb, then the installed `.deb` at `/usr/bin/claude-account-pilot` | pass, ports 42191 (en), 43389 (tr), 46091 (deb) | pass | restored | AppImage selected `Claude.Account.Pilot-9.9.9-linux-x86_64.AppImage`. The deb has no self-replace (`kind=none`) | `apt-get remove` deleted the binary and `/opt/Claude Account Pilot` |
+| macOS | Unzipped arm64 `.app` on `macos-latest`, quarantine attribute cleared | pass, ports 49223 (en), 49225 (tr) | pass | restored | `Claude.Account.Pilot-9.9.9-mac-arm64.zip` | the unzipped bundle was deleted |
+| Windows | Portable exe, then NSIS `/S` into `C:\pilot-qa` | pass, ports 64116 (en), 64124 (tr), 64132 (setup) | pass | restored | portable selected `Claude.Account.Pilot-Portable-9.9.9-win-x64.exe`; setup selected `Claude.Account.Pilot-Setup-9.9.9-win-x64.exe` | the uninstaller removed `Claude Account Pilot.exe` |
 
 ## Pages and README
 
@@ -81,7 +79,7 @@ Checked live before this commit (HTTP 200):
 
 Claude Account Pilot 1.1.0 üzerinde bağımsız bir geçiş. Düzeltmeler 1.2.0 olarak çıktı.
 
-Yerel birim ve tümleştirme sınamaları: **89 geçti, 0 kaldı** (Linux, Node 22, ağ yok). Paketlenmiş başlatma sınamaları GitHub Actions üzerinde `ubuntu-latest`, `macos-latest` ve `windows-latest` koşar (`.github/workflows/ci.yml` ve `.github/workflows/release.yml`). Ekran görüntüleri ve her sürecin yazdığı JSON, `smoke-*` artifaktlarıdır.
+Yerel birim ve tümleştirme sınamaları: **89 geçti, 0 kaldı** (Linux, Node 22, ağ yok). Paketli matris `5d0f6dd` işleminde yeşil: [CI koşusu 39649209165](https://github.com/cumabozkurt/claude-account-pilot/actions/runs/39649209165). `npm test` üç koşucuda da geçti (Linux ve macOS 89/89; Windows 87 geçti, 2 atlandı — sembolik bağ ve sabit bağ sınamaları Windows'ta atlanır). Ekran görüntüleri ve JSON raporlar o koşunun `smoke-ubuntu-latest`, `smoke-macos-latest` ve `smoke-windows-latest` artifaktlarıdır. Önceki koşu [39648500735](https://github.com/cumabozkurt/claude-account-pilot/actions/runs/39648500735) yalnız koşumda kaldı: Linux belge dizinini çalıştırdı, Windows kaldırıcısı dosyaları silmeyi bitirmemişti. O koşudaki uygulama kontrolleri geçmişti.
 
 ## Ne sınandı
 
@@ -115,15 +113,13 @@ Olduğu gibi bırakılanlar: bilinmeyen kota kullanılabilir; vekil yalnız `127
 
 ## İşletim sistemi sonuçları
 
-Tablo, bu işlemi derleyip başlatan GitHub Actions koşusundan doldurulur. Ekran görüntüleri `smoke-<os>` artifaktındadır.
+[Koşu 39649209165](https://github.com/cumabozkurt/claude-account-pilot/actions/runs/39649209165), işlem `5d0f6dd`, 2026-10-21. Aşağıdaki her duman satırı `ok` idi. Her başlatmadan sonra geçici ev silindi ve tohum `settings.json` özgün baytlarla aynı kaldı. Ekran görüntüleri: `linux-appimage-en.png`, `linux-appimage-tr.png`, `linux-deb-en.png`, `mac-arm64-en.png`, `mac-arm64-tr.png`, `win-portable-en.png`, `win-portable-tr.png`, `win-setup-en.png`.
 
 | OS | Başlatma | Vekil `/health` | Tepsi | settings.json | Sahte yayın | Kaldırma |
 |---|---|---|---|---|---|---|
-| Linux | `xvfb-run` ile AppImage, sonra kurulu `.deb` | `smoke-reports/linux-*.json` | zorunlu | tohum dosya geri gelir, geçici ev silinir | AppImage 9.9.9 varlığını seçmeli; `.deb` kendini değiştirmez | `apt-get remove` ikiliyi silmeli |
-| macOS | Koşucu mimarisinin zip'inden `.app` | aynı | zorunlu | aynı | eşleşen mac zip varlığı | paket dizini silinir |
-| Windows | Taşınabilir exe, sonra `C:\pilot-qa` içine NSIS `/S` | aynı | zorunlu | aynı | taşınabilir veya kurulum varlığı | kaldırıcı `/S` exe'yi silmeli |
-
-Bir JSON `"ok": false` ise o iş kayıttaki başarısızlıktır. Koşu bitince bu dosya güncellenir.
+| Linux | Xvfb altında AppImage, sonra `/usr/bin/claude-account-pilot` | geçti; kapılar 42191 (en), 43389 (tr), 46091 (deb) | geçti | geri yüklendi | AppImage `Claude.Account.Pilot-9.9.9-linux-x86_64.AppImage` seçti. Deb kendini değiştirmez (`kind=none`) | `apt-get remove` ikiliyi ve `/opt/Claude Account Pilot` dizinini sildi |
+| macOS | `macos-latest` üzerinde açılmış arm64 `.app`, karantina özniteliği temizlendi | geçti; kapılar 49223 (en), 49225 (tr) | geçti | geri yüklendi | `Claude.Account.Pilot-9.9.9-mac-arm64.zip` | açılan paket silindi |
+| Windows | Taşınabilir exe, sonra `C:\pilot-qa` içine NSIS `/S` | geçti; kapılar 64116 (en), 64124 (tr), 64132 (kurulum) | geçti | geri yüklendi | taşınabilir `Claude.Account.Pilot-Portable-9.9.9-win-x64.exe`; kurulum `Claude.Account.Pilot-Setup-9.9.9-win-x64.exe` | kaldırıcı `Claude Account Pilot.exe` dosyasını sildi |
 
 ## Sayfalar ve README
 
