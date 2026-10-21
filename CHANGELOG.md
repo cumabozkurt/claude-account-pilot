@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.0] - 2026-10-21
+
+- First launch reads the logins already on the computer: Claude Code's credentials file and macOS keychain item, Codex, OpenCode, Gemini, Antigravity, a live Claude Desktop session file, and API keys from the environment or `~/.claude/settings.json`. A removed login is not imported again.
+- Claude Code and the VS Code extension are pointed at the proxy, with the existing backup. If that address is overwritten, it is put back. The app starts at login and stays in the tray. The proxy is started again if it stops.
+- Haiku is routed through the providers that were actually found, cheapest first, with the rest as fallbacks. Other models stay on Claude. With no Claude account, every model follows that chain.
+- A packaged AppImage, macOS zip, or Windows installer downloads and replaces itself. A deb package and a development checkout only show the link.
+- Antigravity's Google client is read from the install's JSON when it is there. It is still not shipped in this repository.
+
 ## [1.0.0] - 2026-10-21
 
 - Export writes a JSON snapshot of accounts, routes, the ledger, and quota history. Secret handles and refresh fingerprints are left out.

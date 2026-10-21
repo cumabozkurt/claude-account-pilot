@@ -52,20 +52,52 @@ function record(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
+function expiryMs(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) return value;
+  if (typeof value === "string" && value) {
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  return undefined;
+}
+
+/** Read a Gemini CLI creds file or an Antigravity `token` envelope. */
 export function parseGoogleTokens(payload: unknown): GoogleTokens | null {
   const root = record(payload);
   if (!root) return null;
-  const access = root.access_token ?? root.accessToken;
+  const nested = record(root.token);
+  const source = nested && (typeof nested.access_token === "string" || typeof nested.accessToken === "string") ? nested : root;
+  const access = source.access_token ?? source.accessToken;
   if (typeof access !== "string" || access.length < 8) return null;
-  const refresh = root.refresh_token ?? root.refreshToken;
-  const expires = Number(root.expiresAt ?? root.expiry_date ?? 0);
+  const refresh = source.refresh_token ?? source.refreshToken ?? root.refresh_token ?? root.refreshToken;
+  const expires = expiryMs(source.expiresAt ?? source.expiry_date ?? source.expiry ?? root.expiresAt ?? root.expiry_date);
+  const email = source.email ?? root.email;
+  const project = source.projectId ?? source.project_id ?? root.projectId ?? root.project_id;
   return {
     accessToken: access,
     refreshToken: typeof refresh === "string" && refresh ? refresh : undefined,
-    expiresAt: Number.isFinite(expires) && expires > 0 ? expires : undefined,
-    email: typeof root.email === "string" ? root.email : undefined,
-    projectId: typeof root.projectId === "string" ? root.projectId : typeof root.project_id === "string" ? root.project_id : undefined,
+    expiresAt: expires,
+    email: typeof email === "string" ? email : undefined,
+    projectId: typeof project === "string" ? project : undefined,
   };
+}
+
+/** Write a refreshed token back into whichever shape the file already used. */
+export function patchGoogleCredentialFile(raw: string, tokens: GoogleTokens): string {
+  const parsed = JSON.parse(raw) as unknown;
+  const root = record(parsed) ?? {};
+  const nested = record(root.token);
+  if (nested) {
+    nested.access_token = tokens.accessToken;
+    if (tokens.refreshToken) nested.refresh_token = tokens.refreshToken;
+    if (tokens.expiresAt) nested.expiry = new Date(tokens.expiresAt).toISOString();
+    root.token = nested;
+  } else {
+    root.access_token = tokens.accessToken;
+    if (tokens.refreshToken) root.refresh_token = tokens.refreshToken;
+    if (tokens.expiresAt) root.expiry_date = tokens.expiresAt;
+  }
+  return `${JSON.stringify(root, null, 2)}\n`;
 }
 
 export function googleNeedsRefresh(tokens: GoogleTokens, now = Date.now()): boolean {

@@ -59,3 +59,14 @@ export function restoreClaudeSettings(home: string): boolean {
 export function claudeEnvSnippet(baseUrl: string): string {
   return `ANTHROPIC_BASE_URL=${baseUrl}\nANTHROPIC_API_KEY=${LOCAL_CLIENT_KEY}\n`;
 }
+
+/** True when Claude Code's settings are missing the proxy address or a client key. */
+export function claudeSettingsNeedUpdate(home: string, baseUrl: string): boolean {
+  const doc = readJson(claudeSettingsPath(home));
+  const env =
+    doc.env && typeof doc.env === "object" && !Array.isArray(doc.env) ? (doc.env as Record<string, unknown>) : {};
+  if (env[MANAGED_URL] !== baseUrl) return true;
+  const key = typeof env[MANAGED_KEY] === "string" && String(env[MANAGED_KEY]).length > 0;
+  const token = typeof env.ANTHROPIC_AUTH_TOKEN === "string" && String(env.ANTHROPIC_AUTH_TOKEN).length > 0;
+  return !key && !token;
+}

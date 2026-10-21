@@ -2,7 +2,7 @@
 
 # Claude Account Pilot
 
-**Bir Claude hesabı %98'e gelince sıradaki hesap devralır. Haiku, DeepSeek'e gidebilir. Tek ekran.**
+**Kurun. Bu bilgisayardaki oturumları bulur, Claude Code'u kendine çevirir ve %98'de değiştirir.**
 
 [![English](https://img.shields.io/badge/lang-English-blue.svg)](README.md)
 [![Türkçe](https://img.shields.io/badge/dil-T%C3%BCrk%C3%A7e-red.svg)](README.tr.md)
@@ -14,7 +14,7 @@
 
 </div>
 
-> **Tek cümle:** Claude Account Pilot, eklediğiniz Claude hesaplarını yerel bir vekilin arkasında tutan, kotayı izleyen, %98'de sıradaki uygun hesaba geçen ve seçtiğiniz modeli (varsayılan Haiku) OpenCode Go, DeepSeek veya bu bilgisayardaki Codex oturumuna gönderebilen bir masaüstü uygulamasıdır.
+> **Tek cümle:** Claude Account Pilot'u kurup tepside bırakın. Makinedeki Claude, Codex, OpenCode, DeepSeek, Gemini ve Antigravity oturumlarını okur, Claude Code ile VS Code eklentisini yerel bir vekile çevirir ve trafiği %98'de taşır.
 
 Claude Code ve Claude Code VS Code eklentisi tek adrese bakar (`ANTHROPIC_BASE_URL`). Uygulama **Türkçe ve İngilizce** konuşur. İlk açılışta işletim sistemi dilini kullanır.
 
@@ -89,9 +89,14 @@ Pencereyi kapatmak vekili durdurmaz. Çıkmak için tepsi menüsünü kullanın.
 
 ## İlk çalıştırma
 
-1. Uygulamayı açın. Sistem dili Türkçeyse arayüz Türkçedir. EN/TR anahtarı hatırlanır.
-2. İlk ekran Claude Pro/Max girişi (kodu yapıştırın) veya `~/.claude/.credentials.json` içe aktarmayı sunar. API anahtarı da çalışır. Yalnız trafik almasını istediklerinizi açık bırakın.
-3. Claude Code ve VS Code eklentisi için **Claude ayarını yaz** düğmesine basın. Vekili yok sayan bir istemci için hesap satırındaki **Claude Code'da kullan** düğmesini kullanın. Claude Code'u yeniden başlatın veya eklenti sekmesini kapatıp açın.
+Sisteminize uygun dosyayı kurup bir kez açın. Uygulama tepsiye gider.
+
+- Claude Code kimlik dosyasını ve macOS'ta `Claude Code-credentials` anahtarlık kaydını okur. `~/.codex/auth.json`, OpenCode `auth.json`, Gemini ve Antigravity belirteç dosyaları ile ortamda veya `~/.claude/settings.json` içinde duran API anahtarlarını da okur.
+- `ANTHROPIC_BASE_URL` değerini `~/.claude/settings.json` dosyasına yazar (ilk yazışta bir yedek durur). Claude Code ve VS Code eklentisi aynı dosyayı okur. Başka bir şey adresi değiştirirse uygulama geri yazar.
+- Oturum açılınca başlar. Vekil çökerse yeniden açılır. Hesaplar %98'de değişir.
+- Haiku, gerçekten bulunan en ucuz sağlayıcıya gider; diğerleri yedektir. Diğer modeller Claude'da kalır. Ekrandan hepsi kapatılabilir.
+
+Yalnız makinede hiç Claude girişi yoksa bir şey yaparsınız: pencere açılır, **Claude girişini aç** düğmesine basarsınız ve tarayıcının gösterdiği kodu yapıştırırsınız. Bu yapıştırma Anthropic'in yönlendirmesidir. Claude Code zaten açıksa yeniden başlatın.
 4. İsterseniz Claude'u başlattığınız kabuğa şunu yapıştırın:
 
 ```bash
@@ -166,10 +171,10 @@ Araştırmada sürekli görünen diğer yığın Tauri 2'dir (CC Switch, QuotaBa
 - Anthropic, resmi istemciden gelmeyen bir abonelik OAuth belirtecini reddedebilir. API anahtarları çalışmaya devam eder. Yenileme, Claude Code ile aynı JSON belirteç ucunu kullanır. Claude Code'un diskte tuttuğu oturum hiç yenilenmez. Reddedilen bir yenileme (`invalid_grant`) "yeniden giriş" olarak gösterilir ve tekrar denenmez.
 - Claude Desktop sohbet uygulaması kendi şifreli oturumunu saklar. Kimlik değiştirmek Claude Code'u ve VS Code eklentisini günceller. Desktop sohbetini başka bir hesaba sokmaz.
 - OpenCode Go ve DeepSeek kullanılma yüzdesi yayınlamaz. Belirteç, tahmini maliyet ve API dönerse DeepSeek bakiyesi görürsünüz.
-- Codex kota pencereleri yalnız yukarı akış gönderirse görünür. Oturum dosyası okunur, bu uygulama tarafından yenilenmez.
+- Codex kota pencereleri yalnız yukarı akış gönderirse görünür. Süresi dolan erişim belirteci yenilenir ve `~/.codex/auth.json` dosyasına geri yazılır.
 - Cursor'ın araç çağrılarını koruyan kararlı bir mesaj API'si yoktur. Tespit edilir, yönlendirilmez. Diğer sınırlar [docs/LIMITATIONS.md](docs/LIMITATIONS.md) içindedir. Antigravity, Google'ın daily Cloud Code ucuna gider. OpenRouter ve Gemini OpenAI uyumlu adımlardır; her rotada yedek vardır.
 - Maliyet sütunundaki fiyatlar göstermek için liste fiyatı tahminidir.
-- Derlemeler imzasızdır. Daha yeni bir GitHub sürümü duyurulur; sessizce kurulmaz.
+- Derlemeler imzasızdır. Paketlenmiş AppImage, macOS zip veya Windows kurucusu yeni sürümü indirip kendini değiştirir. `.deb` ve geliştirme kopyası yalnız bağlantıyı gösterir.
 - Dışa aktarma ve `pilot.log` istem ve sır içermez. Günlük, uygulamanın kullanıcı verisi klasöründedir.
 - Menü çubuğu yüzdesi yalnız macOS'tadır. Linux ve Windows tepsi ipucunu ve isteğe bağlı yüzen pencereyi kullanır; bu masaüstlerinde genel bir menü çubuğu yoktur.
 

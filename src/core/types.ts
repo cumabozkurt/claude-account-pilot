@@ -95,6 +95,16 @@ export interface AppConfig {
   antigravityClientId: string;
   /** True after the first-run wizard is dismissed or an account is added. */
   onboarded: boolean;
+  /** Keep rewriting ~/.claude/settings.json when something else changes the proxy URL. */
+  autoManageClaude: boolean;
+  /** Download and install a newer GitHub release when this copy of the app can replace itself. */
+  autoUpdate: boolean;
+  /** Rebuild the default routes from the providers that have an account. */
+  routesManaged: boolean;
+  /** Bumped once so an older install picks up the automatic defaults a single time. */
+  setupRevision: number;
+  /** Discovered logins the user removed. They are not imported again. */
+  dismissedRefs: string[];
   providersEnabled: Record<ProviderId, boolean>;
   accounts: Account[];
   routes: ModelRoute[];
@@ -128,11 +138,16 @@ export function defaultConfig(): AppConfig {
     proxyEnabled: true,
     switchThreshold: DEFAULT_THRESHOLD,
     widgetEnabled: false,
-    launchAtLogin: false,
+    launchAtLogin: true,
     notify: true,
     syncedAccountId: null,
     antigravityClientId: "",
     onboarded: false,
+    autoManageClaude: true,
+    autoUpdate: true,
+    routesManaged: true,
+    setupRevision: 1,
+    dismissedRefs: [],
     providersEnabled: {
       claude: true,
       "opencode-go": false,

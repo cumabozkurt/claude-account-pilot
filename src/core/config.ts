@@ -33,11 +33,16 @@ export function loadConfig(path: string): AppConfig {
     proxyEnabled: raw.proxyEnabled !== false,
     switchThreshold: Number.isFinite(threshold) ? Math.min(99, Math.max(50, threshold)) : base.switchThreshold,
     widgetEnabled: Boolean(raw.widgetEnabled),
-    launchAtLogin: Boolean(raw.launchAtLogin),
+    launchAtLogin: typeof raw.launchAtLogin === "boolean" ? raw.launchAtLogin : base.launchAtLogin,
     notify: raw.notify !== false,
     syncedAccountId: typeof raw.syncedAccountId === "string" ? raw.syncedAccountId : null,
     antigravityClientId: typeof raw.antigravityClientId === "string" ? raw.antigravityClientId : "",
     onboarded: raw.onboarded === true || (Array.isArray(raw.accounts) && raw.accounts.length > 0),
+    autoManageClaude: raw.autoManageClaude !== false,
+    autoUpdate: raw.autoUpdate !== false,
+    routesManaged: typeof raw.routesManaged === "boolean" ? raw.routesManaged : false,
+    setupRevision: Number.isFinite(Number(raw.setupRevision)) ? Number(raw.setupRevision) : 0,
+    dismissedRefs: Array.isArray(raw.dismissedRefs) ? raw.dismissedRefs.filter((item): item is string => typeof item === "string") : [],
     providersEnabled: providers,
     accounts: Array.isArray(raw.accounts)
       ? raw.accounts.filter((account) => account && typeof account === "object" && isProvider(account.provider) && typeof account.id === "string")

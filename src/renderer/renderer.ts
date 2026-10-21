@@ -58,6 +58,9 @@ interface PublicState {
   widgetEnabled: boolean;
   launchAtLogin: boolean;
   notify: boolean;
+  autoManageClaude: boolean;
+  autoUpdate: boolean;
+  routesManaged: boolean;
   antigravityClientId: string;
   encryptionWarning: boolean;
   providersEnabled: Record<ProviderId, boolean>;
@@ -85,6 +88,9 @@ interface PilotBridge {
   setProvider: (id: ProviderId, enabled: boolean) => Promise<void>;
   setWidget: (enabled: boolean) => Promise<void>;
   setLaunchAtLogin: (enabled: boolean) => Promise<void>;
+  setAutoManage: (enabled: boolean) => Promise<void>;
+  setAutoUpdate: (enabled: boolean) => Promise<void>;
+  setRoutesManaged: (enabled: boolean) => Promise<void>;
   addAccount: (input: { label: string; provider: ProviderId; secret: string; authKind: "api-key" | "oauth" }) => Promise<void>;
   toggleAccount: (id: string, enabled: boolean) => Promise<void>;
   removeAccount: (id: string) => Promise<void>;
@@ -437,6 +443,12 @@ function renderProxy(): void {
   if (port && document.activeElement !== port) port.value = String(state.port);
   const launch = document.querySelector<HTMLInputElement>("#launch");
   if (launch) launch.checked = state.launchAtLogin;
+  const manage = document.querySelector<HTMLInputElement>("#manage");
+  if (manage) manage.checked = state.autoManageClaude;
+  const routesManaged = document.querySelector<HTMLInputElement>("#routes-managed");
+  if (routesManaged) routesManaged.checked = state.routesManaged;
+  const autoUpdate = document.querySelector<HTMLInputElement>("#auto-update");
+  if (autoUpdate) autoUpdate.checked = state.autoUpdate;
   const widget = document.querySelector<HTMLInputElement>("#widget");
   if (widget) widget.checked = state.widgetEnabled;
   const notify = document.querySelector<HTMLInputElement>("#notify");
@@ -689,6 +701,15 @@ function bind(): void {
   });
   document.querySelector("#launch")?.addEventListener("change", (event) => {
     void window.pilot.setLaunchAtLogin((event.target as HTMLInputElement).checked);
+  });
+  document.querySelector("#manage")?.addEventListener("change", (event) => {
+    void window.pilot.setAutoManage((event.target as HTMLInputElement).checked);
+  });
+  document.querySelector("#routes-managed")?.addEventListener("change", (event) => {
+    void window.pilot.setRoutesManaged((event.target as HTMLInputElement).checked);
+  });
+  document.querySelector("#auto-update")?.addEventListener("change", (event) => {
+    void window.pilot.setAutoUpdate((event.target as HTMLInputElement).checked);
   });
   document.querySelector("#widget")?.addEventListener("change", (event) => {
     void window.pilot.setWidget((event.target as HTMLInputElement).checked);

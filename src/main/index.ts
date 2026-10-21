@@ -1,15 +1,17 @@
 import { app, BrowserWindow, Menu, Notification, Tray, dialog, ipcMain, nativeImage, shell, type NativeImage } from "electron";
-import { execFile } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { execFile, execFileSync, spawn } from "node:child_process";
+import { chmodSync, copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir, tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
-import { applyClaudeBaseUrl, claudeEnvSnippet, restoreClaudeSettings } from "../core/claude-settings.js";
+import { installKind, looksLikeInstaller, pickUpdateAsset } from "../core/auto-update.js";
+import { applyAutomaticSetup } from "../core/bootstrap.js";
+import { applyClaudeBaseUrl, claudeEnvSnippet, claudeSettingsNeedUpdate, restoreClaudeSettings } from "../core/claude-settings.js";
 import { loadConfig, saveConfig } from "../core/config.js";
-import { captureDisk, claudeCodeOwns, keychainPlan, readCredentialsRaw, restoreCredentialsFile, writeCredentialsFile } from "../core/credential-swap.js";
-import { DISCOVERED_CLAUDE, DISCOVERED_CODEX, readCodexAuth } from "../core/credentials.js";
+import { CLAUDE_KEYCHAIN_SERVICE, captureDisk, claudeCodeOwns, keychainPlan, readCredentialsRaw, restoreCredentialsFile, writeCredentialsFile } from "../core/credential-swap.js";
+import { DISCOVERED_CLAUDE, DISCOVERED_CODEX } from "../core/credentials.js";
 import { buildExport } from "../core/export-data.js";
 import { appendSample, usageByDay, usageByModel, type QuotaSample } from "../core/history.js";
 import { appendLog } from "../core/log-file.js";
@@ -38,10 +40,12 @@ import {
   googleRefreshRequest,
   googleTokensDocument,
   parseGoogleTokens,
+  patchGoogleCredentialFile,
 } from "../core/oauth-google.js";
 import { OPENROUTER_KEY_URL, openRouterPercent } from "../core/openrouter.js";
 import { listenForOAuthCode } from "../core/oauth-loopback.js";
-import { discoverInstalls, type Discovery } from "../core/discover.js";
+import { discoveriesFromScan } from "../core/discover.js";
+import { claudeDesktopDirs, findGoogleClient, opencodeKey, scanHome, secretFromDesktopFile } from "../core/scan.js";
 import { detectLang, translate } from "../core/i18n.js";
 import { emptyLedger, loadLedger, recordUsage, saveLedger } from "../core/ledger.js";
 import type { RuntimeSnapshot } from "../core/plan.js";
@@ -89,6 +93,9 @@ const quotaNotes = new Map<string, { windows: QuotaWindow[]; percent: number | n
 let history: QuotaSample[] = [];
 let alertSeen: Record<string, true> = {};
 let pendingLogin: PkceLogin | null = null;
+let latestDiscoveries = discoveriesFromScan({ accounts: [], secretValues: {}, googleClient: null, notes: [] });
+let expectProxyClose = false;
+let healTimer: NodeJS.Timeout | null = null;
 let flash: { text: string; warn?: boolean } | null = null;
 
 const runtime: RuntimeSnapshot = {
@@ -178,7 +185,9 @@ async function checkForUpdate(): Promise<void> {
       signal: AbortSignal.timeout(8000),
     });
     if (!response.ok) return;
-    updateNotice = newerRelease(pkg.version, await response.json());
+    const payload = (await response.json()) as { assets?: Array<{ name?: string; browser_download_url?: string }> };
+    updateNotice = newerRelease(pkg.version, payload);
+    updateAssets = Array.isArray(payload.assets) ? payload.assets : [];
   } catch {
     /* offline or rate limited: keep the current build */
   }
@@ -229,11 +238,14 @@ function publicState() {
       };
     }),
     notify: config.notify,
+    autoManageClaude: config.autoManageClaude,
+    autoUpdate: config.autoUpdate,
+    routesManaged: config.routesManaged,
     syncedAccountId: config.syncedAccountId,
     antigravityClientId: config.antigravityClientId,
     antigravityClientReady: Boolean(config.antigravityClientId && secrets.get(ANTIGRAVITY_CLIENT_SECRET)),
     routes: config.routes,
-    discoveries: discoverInstalls(home()),
+    discoveries: latestDiscoveries,
     activity,
     activeLabel: active?.label ?? "",
     activePercent: activeQuota?.percent ?? (active ? runtime.percentByAccount[active.id] ?? null : null),
@@ -294,7 +306,33 @@ async function readStoredSecret(account: Account): Promise<string | null> {
       if (tokens?.accountId) account.externalId = tokens.accountId;
       return tokens?.accessToken ?? null;
     }
-    if (account.secretRef === DISCOVERED_CLAUDE) return readCredentialsRaw(home());
+    if (account.secretRef === DISCOVERED_CLAUDE || account.secretRef === "discovered:claude-keychain") {
+      return account.secretRef === DISCOVERED_CLAUDE ? readCredentialsRaw(home()) : readKeychainClaude();
+    }
+    if (account.secretRef === "discovered:antigravity" || account.secretRef === "discovered:gemini") {
+      return await readGoogleCredentialFile(account);
+    }
+    if (account.secretRef.startsWith("discovered:opencode:")) {
+      const id = account.secretRef.slice("discovered:opencode:".length);
+      for (const path of [join(home(), ".local", "share", "opencode", "auth.json"), join(home(), ".config", "opencode", "auth.json")]) {
+        try {
+          const key = opencodeKey(readFileSync(path, "utf8"), id);
+          if (key) return key;
+        } catch {
+          /* the other path may exist */
+        }
+      }
+      return null;
+    }
+    if (account.secretRef.startsWith("discovered:desktop:")) {
+      return readDesktopSecret(account.secretRef.slice("discovered:desktop:".length));
+    }
+    if (account.secretRef.startsWith("env:")) {
+      const name = account.secretRef.slice(4);
+      const live = process.env[name];
+      if (live && live.trim().length >= 8 && live.trim() !== "pilot-local") return live.trim();
+      return secrets.get(account.secretRef);
+    }
   } catch {
     return null;
   }
@@ -392,6 +430,13 @@ async function startListening(): Promise<void> {
       config.proxyPort = proxy.port;
       persist();
     }
+    const server = proxy.server;
+    server.on("close", () => {
+      if (proxy?.server === server) proxy = null;
+      if (!expectProxyClose && !quitting && config.proxyEnabled) {
+        setTimeout(() => void startListening(), 1000);
+      }
+    });
   } catch (error) {
     proxy = null;
     flash = { text: error instanceof Error ? error.message : "proxy", warn: true };
@@ -401,7 +446,12 @@ async function startListening(): Promise<void> {
 async function stopListening(): Promise<void> {
   const running = proxy;
   proxy = null;
-  if (running) await running.close();
+  expectProxyClose = true;
+  try {
+    if (running) await running.close();
+  } finally {
+    expectProxyClose = false;
+  }
 }
 
 async function probeQuotas(): Promise<void> {
@@ -538,12 +588,13 @@ function togglePopover(): void {
 }
 
 function showMain(): void {
-  if (!mainWindow || mainWindow.isDestroyed()) createMainWindow();
+  if (process.platform === "darwin" && app.dock) app.dock.show();
+  if (!mainWindow || mainWindow.isDestroyed()) createMainWindow(true);
   mainWindow?.show();
   mainWindow?.focus();
 }
 
-function createMainWindow(): void {
+function createMainWindow(visible = true): void {
   mainWindow = new BrowserWindow({
     width: 980,
     height: 820,
@@ -563,7 +614,7 @@ function createMainWindow(): void {
   });
   void mainWindow.loadFile(rendererHtml);
   mainWindow.once("ready-to-show", () => {
-    mainWindow?.show();
+    if (visible) mainWindow?.show();
     if (process.env.PILOT_SMOKE !== "1") return;
     const window = mainWindow;
     setTimeout(() => {
@@ -720,7 +771,24 @@ function registerIpc(): void {
   });
   ipcMain.handle("pilot:setLaunchAtLogin", (_event, enabled: boolean) => {
     config.launchAtLogin = Boolean(enabled);
-    app.setLoginItemSettings({ openAtLogin: config.launchAtLogin });
+    applyLoginItem();
+    persist();
+    publish();
+  });
+  ipcMain.handle("pilot:setAutoManage", (_event, enabled: boolean) => {
+    config.autoManageClaude = Boolean(enabled);
+    if (config.autoManageClaude) syncManagedSettings();
+    persist();
+    publish();
+  });
+  ipcMain.handle("pilot:setAutoUpdate", (_event, enabled: boolean) => {
+    config.autoUpdate = Boolean(enabled);
+    persist();
+    publish();
+  });
+  ipcMain.handle("pilot:setRoutesManaged", (_event, enabled: boolean) => {
+    config.routesManaged = Boolean(enabled);
+    if (config.routesManaged) applyAutomaticSetup(config, []);
     persist();
     publish();
   });
@@ -758,7 +826,11 @@ function registerIpc(): void {
   ipcMain.handle("pilot:removeAccount", (_event, id: string) => {
     const account = config.accounts.find((item) => item.id === id);
     if (!account) return;
-    if (!account.secretRef.startsWith("discovered:")) secrets.delete(account.secretRef);
+    if (!account.secretRef.startsWith("discovered:") || account.secretRef.startsWith("discovered:desktop:")) secrets.delete(account.secretRef);
+    if (account.secretRef.startsWith("env:")) secrets.delete(account.secretRef);
+    if (account.secretRef.startsWith("discovered:") || account.secretRef.startsWith("env:")) {
+      if (!config.dismissedRefs.includes(account.secretRef)) config.dismissedRefs.push(account.secretRef);
+    }
     config.accounts = config.accounts.filter((item) => item.id !== id);
     delete runtime.percentByAccount[id];
     quotaNotes.delete(id);
@@ -766,6 +838,7 @@ function registerIpc(): void {
     publish();
   });
   ipcMain.handle("pilot:toggleRoute", (_event, id: string, enabled: boolean) => {
+    config.routesManaged = false;
     const route = config.routes.find((item) => item.id === id);
     if (!route) return;
     route.enabled = Boolean(enabled);
@@ -789,16 +862,19 @@ function registerIpc(): void {
         targetModel,
         fallbacks: fallbacks.length ? fallbacks : undefined,
       });
+      config.routesManaged = false;
       persist();
       publish();
     },
   );
   ipcMain.handle("pilot:removeRoute", (_event, id: string) => {
+    config.routesManaged = false;
     config.routes = config.routes.filter((route) => route.id !== id);
     persist();
     publish();
   });
   ipcMain.handle("pilot:moveRoute", (_event, id: string, direction: number) => {
+    config.routesManaged = false;
     const index = config.routes.findIndex((route) => route.id === id);
     const next = index + direction;
     if (index < 0 || next < 0 || next >= config.routes.length) return;
@@ -813,13 +889,17 @@ function registerIpc(): void {
     publish();
   });
   ipcMain.handle("pilot:applyClaude", () => {
+    config.autoManageClaude = true;
     const baseUrl = `http://127.0.0.1:${proxy?.port ?? config.proxyPort}`;
     applyClaudeBaseUrl(home(), baseUrl);
+    persist();
     flash = { text: translate(config.lang ?? "en", "proxy.applied") };
     publish();
   });
   ipcMain.handle("pilot:restoreClaude", () => {
+    config.autoManageClaude = false;
     const ok = restoreClaudeSettings(home());
+    persist();
     flash = { text: translate(config.lang ?? "en", ok ? "proxy.restored" : "proxy.noBackup"), warn: !ok };
     publish();
   });
@@ -983,7 +1063,8 @@ function registerIpc(): void {
     return { ok: true };
   });
   ipcMain.handle("pilot:checkUpdate", async () => {
-    await checkForUpdate();
+    await maybeInstallUpdate();
+    if (!updateNotice) await checkForUpdate();
     flash = {
       text: updateNotice
         ? translate(config.lang ?? "en", "update.available", { version: updateNotice.version })
@@ -1041,43 +1122,15 @@ function addManagedClaude(blob: NonNullable<ReturnType<typeof blobFromSecret>>, 
 }
 
 function importDiscovered(provider: ProviderId): void {
-  const found: Discovery[] = discoverInstalls(home());
-  const hit = found.find((item) => item.provider === provider && item.canImport);
-  if (!hit) return;
-  if (provider === "codex" && !config.accounts.some((account) => account.secretRef === DISCOVERED_CODEX)) {
-    const login = readCodexAuth(JSON.parse(readFileSync(join(home(), ".codex", "auth.json"), "utf8")));
-    if (!login) return;
-    config.accounts.push({
-      id: randomUUID(),
-      provider: "codex",
-      label: "Codex",
-      enabled: true,
-      secretRef: DISCOVERED_CODEX,
-      authKind: "discovered",
-      externalId: login.accountId,
-      baseUrl: login.kind === "apikey" ? "https://api.openai.com/v1" : undefined,
-    });
-    config.providersEnabled.codex = true;
-    config.onboarded = true;
+  const scan = scanHome(home(), process.platform, process.env, readKeychainClaude());
+  latestDiscoveries = discoveriesFromScan(scan);
+  const mine = scan.accounts.filter((account) => account.provider === provider);
+  config.dismissedRefs = config.dismissedRefs.filter((ref) => !mine.some((account) => account.secretRef === ref));
+  for (const account of mine) {
+    const value = scan.secretValues[account.secretRef];
+    if (value) secrets.set(account.secretRef, value);
   }
-    if (provider === "claude" && !config.accounts.some((account) => account.secretRef === DISCOVERED_CLAUDE)) {
-    const raw = readCredentialsRaw(home());
-    const blob = raw ? blobFromSecret(raw) : null;
-    config.accounts.push({
-      id: randomUUID(),
-      provider: "claude",
-      label: blob?.email || "Claude Code",
-      enabled: true,
-      secretRef: DISCOVERED_CLAUDE,
-      authKind: "oauth",
-      email: blob?.email,
-      expiresAt: blob?.expiresAt,
-      lineage: lineageOf(blob?.refreshToken),
-      externalId: blob?.accountUuid,
-    });
-    config.providersEnabled.claude = true;
-    config.onboarded = true;
-  }
+  applyAutomaticSetup(config, mine);
 }
 
 /** Screenshot runs set the language here. Electron's locale ignores LANG in this environment. */
@@ -1217,6 +1270,177 @@ function applySmokeOverrides(): void {
   );
 }
 
+function readKeychainClaude(): string | null {
+  if (process.platform !== "darwin") return null;
+  try {
+    return execFileSync("security", ["find-generic-password", "-s", CLAUDE_KEYCHAIN_SERVICE, "-w"], {
+      encoding: "utf8",
+      timeout: 5000,
+    });
+  } catch {
+    return null;
+  }
+}
+
+function readDesktopSecret(name: string): string | null {
+  if (!/^host-creds-[A-Za-z0-9._-]+\.json$/.test(name)) return null;
+  for (const dir of claudeDesktopDirs(home(), process.platform)) {
+    try {
+      const secret = secretFromDesktopFile(readFileSync(join(dir, name), "utf8"));
+      if (secret) return secret;
+    } catch {
+      /* another directory may hold it */
+    }
+  }
+  return null;
+}
+
+async function readGoogleCredentialFile(account: Account): Promise<string | null> {
+  const path =
+    account.secretRef === "discovered:antigravity"
+      ? join(home(), ".gemini", "antigravity-cli", "antigravity-oauth-token")
+      : join(home(), ".gemini", "oauth_creds.json");
+  const raw = readFileSync(path, "utf8");
+  let tokens = parseGoogleTokens(JSON.parse(raw) as unknown);
+  if (!tokens) return null;
+  let own: { clientId: string; clientSecret: string } | null = null;
+  try {
+    own = findGoogleClient(JSON.parse(raw) as unknown);
+  } catch {
+    own = null;
+  }
+  const client = own ?? (account.secretRef === "discovered:antigravity" ? googleClient() : null);
+  if (tokens.refreshToken && googleNeedsRefresh(tokens) && client?.clientId && client.clientSecret) {
+    const request = googleRefreshRequest(tokens, client);
+    if (request) {
+      const response = await nodeHttp(request);
+      const refreshed = applyGoogleToken(tokens, response.status, response.body);
+      if (refreshed.tokens) {
+        tokens = refreshed.tokens;
+        writeFileSync(path, patchGoogleCredentialFile(raw, tokens), { mode: 0o600 });
+        account.expiresAt = tokens.expiresAt;
+        pushActivity({ at: new Date().toISOString(), key: "log.refreshed", vars: { label: account.label } });
+      }
+    }
+  }
+  if (tokens.projectId) account.externalId = tokens.projectId;
+  return tokens.accessToken;
+}
+
+function rememberScanSecrets(values: Record<string, string>): void {
+  for (const [ref, value] of Object.entries(values)) {
+    if (value.trim().length >= 8) secrets.set(ref, value.trim());
+  }
+}
+
+/** Import logins that are already on this computer and keep Claude Code pointed at the proxy. */
+function adoptMachine(): void {
+  const scan = scanHome(home(), process.platform, process.env, readKeychainClaude());
+  latestDiscoveries = discoveriesFromScan(scan);
+  rememberScanSecrets(scan.secretValues);
+  if (scan.googleClient) {
+    config.antigravityClientId = scan.googleClient.clientId;
+    secrets.set(ANTIGRAVITY_CLIENT_SECRET, scan.googleClient.clientSecret);
+  }
+  const result = applyAutomaticSetup(config, scan.accounts);
+  if (result.added > 0) {
+    pushActivity({ at: new Date().toISOString(), key: "log.imported", vars: { count: result.added } });
+  }
+  for (const note of scan.notes) {
+    const key = `note:${note}`;
+    if (alertSeen[key]) continue;
+    alertSeen[key] = true;
+    pushActivity({ at: new Date().toISOString(), key: `note.${note}`, vars: {} });
+  }
+}
+
+function applyLoginItem(): void {
+  try {
+    app.setLoginItemSettings({ openAtLogin: config.launchAtLogin, openAsHidden: true });
+  } catch {
+    /* a session without an autostart directory still runs the proxy */
+  }
+}
+
+function syncManagedSettings(): void {
+  if (!config.autoManageClaude || !proxy) return;
+  const baseUrl = `http://127.0.0.1:${proxy.port}`;
+  if (!claudeSettingsNeedUpdate(home(), baseUrl)) return;
+  applyClaudeBaseUrl(home(), baseUrl);
+  pushActivity({ at: new Date().toISOString(), key: "log.managed", vars: { address: baseUrl } });
+}
+
+async function maybeInstallUpdate(): Promise<void> {
+  if (process.env.PILOT_SMOKE === "1" || !config.autoUpdate || !app.isPackaged) return;
+  await checkForUpdate();
+  if (!updateNotice) return;
+  const kind = installKind({
+    platform: process.platform,
+    arch: process.arch,
+    packaged: app.isPackaged,
+    appImage: process.env.APPIMAGE,
+    portable: Boolean(process.env.PORTABLE_EXECUTABLE_FILE),
+  });
+  const asset = pickUpdateAsset(updateNotice.version, kind, process.arch, updateAssets);
+  if (!asset) return;
+  try {
+    const response = await fetch(asset.url, { signal: AbortSignal.timeout(120_000) });
+    if (!response.ok) return;
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (!looksLikeInstaller(asset.kind, bytes)) return;
+    const dir = join(app.getPath("temp"), "claude-account-pilot-update");
+    mkdirSync(dir, { recursive: true });
+    const file = join(dir, asset.name);
+    writeFileSync(file, bytes);
+    if (asset.kind === "appimage" && process.env.APPIMAGE) {
+      copyFileSync(file, process.env.APPIMAGE);
+      chmodSync(process.env.APPIMAGE, 0o755);
+      relaunchUpdated(updateNotice.version);
+      return;
+    }
+    if (asset.kind === "mac-zip") {
+      const appPath = macAppPath(process.execPath);
+      if (!appPath) return;
+      execFileSync("unzip", ["-qo", file, "-d", dir], { timeout: 120_000 });
+      const unpacked = join(dir, "Claude Account Pilot.app");
+      execFileSync("rm", ["-rf", appPath], { timeout: 60_000 });
+      execFileSync("mv", [unpacked, appPath], { timeout: 60_000 });
+      relaunchUpdated(updateNotice.version);
+      return;
+    }
+    if (asset.kind === "win-setup") {
+      spawn(file, ["/S"], { detached: true, stdio: "ignore" }).unref();
+      relaunchUpdated(updateNotice.version);
+      return;
+    }
+    if (asset.kind === "win-portable") {
+      const target = process.env.PORTABLE_EXECUTABLE_FILE || process.execPath;
+      const script = join(dir, "swap.cmd");
+      writeFileSync(script, `@echo off\r\nping 127.0.0.1 -n 3 >nul\r\nmove /Y "${file}" "${target}"\r\nstart "" "${target}"\r\n`);
+      spawn("cmd.exe", ["/c", script], { detached: true, stdio: "ignore" }).unref();
+      relaunchUpdated(updateNotice.version);
+    }
+  } catch {
+    /* keep the download link; a failed install must not take the proxy down */
+  }
+}
+
+function macAppPath(execPath: string): string | null {
+  const marker = ".app/";
+  const index = execPath.indexOf(marker);
+  if (index < 0) return null;
+  return execPath.slice(0, index + marker.length - 1);
+}
+
+function relaunchUpdated(version: string): void {
+  pushActivity({ at: new Date().toISOString(), key: "log.updated", vars: { version } });
+  persistRuntime();
+  app.relaunch();
+  app.exit(0);
+}
+
+let updateAssets: Array<{ name?: string; browser_download_url?: string }> = [];
+
 if (process.env.PILOT_SMOKE === "1") {
   const tag = process.env.PILOT_LANG === "tr" ? "tr" : "en";
   app.setPath("userData", join(tmpdir(), `pilot-smoke-${tag}`));
@@ -1247,6 +1471,7 @@ if (!gotLock) {
     ledger = loadLedger(ledgerPath);
     secrets = createSecretStore(join(dir, "secrets.bin"));
     applySmokeOverrides();
+    if (process.env.PILOT_SMOKE !== "1") adoptMachine();
     persist();
     icon = nativeImage.createFromPath(join(here, "../icon.png"));
     if (icon.isEmpty()) icon = nativeImage.createEmpty();
@@ -1254,21 +1479,31 @@ if (!gotLock) {
     tray = new Tray(icon);
     tray.on("click", () => togglePopover());
     registerIpc();
-    app.setLoginItemSettings({ openAtLogin: config.launchAtLogin });
+    applyLoginItem();
     await startListening();
-    createMainWindow();
+    if (process.env.PILOT_SMOKE !== "1") syncManagedSettings();
+    const visible = process.env.PILOT_SMOKE === "1" || config.accounts.length === 0;
+    if (process.platform === "darwin" && !visible && app.dock) app.dock.hide();
+    createMainWindow(visible);
     syncWidget();
     publish();
     void probeQuotas();
-    void checkForUpdate().then(() => publish());
+    void maybeInstallUpdate().then(() => publish());
     probeTimer = setInterval(() => void probeQuotas(), 60_000);
     probeTimer.unref();
+    healTimer = setInterval(() => {
+      if (quitting) return;
+      if (config.proxyEnabled && !proxy) void startListening();
+      if (process.env.PILOT_SMOKE !== "1") syncManagedSettings();
+    }, 30_000);
+    healTimer.unref();
   });
 }
 
 app.on("before-quit", () => {
   quitting = true;
   if (probeTimer) clearInterval(probeTimer);
+  if (healTimer) clearInterval(healTimer);
 });
 
 app.on("will-quit", () => {

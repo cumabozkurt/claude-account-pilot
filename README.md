@@ -2,7 +2,7 @@
 
 # Claude Account Pilot
 
-**When a Claude account reaches 98%, the next one takes over. Haiku can go to DeepSeek. One screen.**
+**Install it. It finds the logins already on this computer, points Claude Code at itself, and switches at 98%.**
 
 [![English](https://img.shields.io/badge/lang-English-blue.svg)](README.md)
 [![Türkçe](https://img.shields.io/badge/dil-T%C3%BCrk%C3%A7e-red.svg)](README.tr.md)
@@ -14,7 +14,7 @@
 
 </div>
 
-> **In one sentence:** Claude Account Pilot is a desktop app that keeps every Claude account you add on a local proxy, watches quota, switches to the next available account at 98%, and can send a chosen model (Haiku, by default) to OpenCode Go, DeepSeek, or a Codex login already on the machine.
+> **In one sentence:** Install Claude Account Pilot and leave it in the tray. It reads the Claude, Codex, OpenCode, DeepSeek, Gemini, and Antigravity logins already on the machine, points Claude Code and the VS Code extension at a local proxy, and moves traffic at 98%.
 
 Claude Code and the Claude Code VS Code extension keep talking to one address (`ANTHROPIC_BASE_URL`). The app speaks **English and Turkish**. It follows the operating system language the first time it opens.
 
@@ -89,9 +89,14 @@ Closing the window leaves the proxy running. Quit from the tray menu.
 
 ## First run
 
-1. Open the app. If the system language is Turkish, the interface is Turkish. The EN/TR switch is remembered.
-2. The first screen offers a Claude Pro/Max login (paste the code) or an import of `~/.claude/.credentials.json`. An API key still works. Turn on only the accounts that should receive traffic.
-3. Click **Write Claude settings** for Claude Code and the VS Code extension. For a client that ignores the proxy, use **Use in Claude Code** on the account. Restart Claude Code, or close and reopen the extension tab.
+Install the build for your system and open it once. It goes to the tray.
+
+- It reads Claude Code's credentials file and, on macOS, the `Claude Code-credentials` keychain item. It also reads `~/.codex/auth.json`, OpenCode's `auth.json`, Gemini and Antigravity token files, and API keys already in the environment or in `~/.claude/settings.json`.
+- It writes `ANTHROPIC_BASE_URL` into `~/.claude/settings.json` (a one-time backup sits beside it). Claude Code and the VS Code extension both read that file. If something else overwrites the address, the app puts it back.
+- It starts at login. The proxy restarts if it dies. Accounts switch at 98%.
+- Haiku is sent to the cheapest provider that was actually found, with the others as fallbacks. Other models stay on Claude. The screen can turn any of this off.
+
+You only have to do something when no Claude login is on the machine: the window opens, you press **Open Claude login**, and you paste the code the browser shows. That paste is Anthropic's redirect, not this app's. Restart Claude Code if it was already open.
 4. Or copy the environment block into the shell you launch Claude from:
 
 ```bash
@@ -166,10 +171,10 @@ Tauri 2 is the other stack that shows up constantly in the research (CC Switch, 
 - Anthropic may reject a subscription OAuth token that does not come from the official client. API keys keep working. Refresh uses the same JSON token endpoint as Claude Code. A login Claude Code currently has on disk is never refreshed. A rejected refresh (`invalid_grant`) is shown as "sign in again" and is not retried.
 - Claude Desktop's chat app stores its own encrypted session. Switching credentials updates Claude Code and the VS Code extension. It does not sign the Desktop chat app into another account.
 - OpenCode Go and DeepSeek do not publish a percent-used quota. You get tokens, estimated cost, and a DeepSeek balance when the API returns one.
-- Codex quota windows appear only if the upstream sends them. The login file is read, not refreshed, by this app.
+- Codex quota windows appear only if the upstream sends them. An expired Codex access token is refreshed and written back to `~/.codex/auth.json`.
 - Cursor has no stable public messages API that preserves tool calls. It is detected, not routed. Details and the other provider limits are in [docs/LIMITATIONS.md](docs/LIMITATIONS.md). Antigravity routes through Google's daily Cloud Code host. OpenRouter and Gemini are OpenAI-compatible hops, with fallbacks on each route.
 - Prices in the cost column are list-price estimates for display.
-- Builds are unsigned. A newer GitHub release is announced; it is not installed silently.
+- Builds are unsigned. A packaged AppImage, macOS zip, or Windows installer replaces itself when a newer release is published. A `.deb` and a dev checkout only show the link, because replacing those needs a privilege this app does not take.
 - Export and `pilot.log` omit prompts and secrets. The log lives in the app's user-data folder.
 - The menu-bar percent is macOS-only. Linux and Windows use the tray tooltip and the optional floating widget, because a global menu bar is not how those desktops work.
 

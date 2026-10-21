@@ -1,5 +1,13 @@
 # Değişiklik günlüğü
 
+## [1.1.0] - 2026-10-21
+
+- İlk açılış bu bilgisayardaki oturumları okur: Claude Code kimlik dosyası ve macOS anahtarlık kaydı, Codex, OpenCode, Gemini, Antigravity, canlı bir Claude Desktop oturum dosyası ve ortamdan ya da `~/.claude/settings.json` içinden API anahtarları. Silinen bir oturum yeniden alınmaz.
+- Claude Code ve VS Code eklentisi vekile çevrilir; eski yedek durur. Adresin üzerine yazılırsa geri konur. Uygulama oturum açılınca başlar ve tepside kalır. Vekil durursa yeniden başlar.
+- Haiku, gerçekten bulunan sağlayıcılardan en ucuzuna gider; kalanlar yedektir. Diğer modeller Claude'da kalır. Claude hesabı yoksa her model aynı zinciri izler.
+- Paketlenmiş AppImage, macOS zip veya Windows kurucusu kendini indirip değiştirir. Deb paketi ve geliştirme kopyası yalnız bağlantıyı gösterir.
+- Antigravity'nin Google istemcisi, kurulumun JSON dosyasında varsa oradan okunur. Depoda yine durmaz.
+
 ## [1.0.0] - 2026-10-21
 
 - Dışa aktarma; hesaplar, rotalar, döküm ve kota geçmişini JSON olarak yazar. Sır tutamaçları ve yenileme parmak izleri dışarıda kalır.
