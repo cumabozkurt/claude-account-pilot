@@ -26,9 +26,9 @@ Honest limits of Claude Account Pilot. The Turkish summary is at the bottom.
 
 - Costs are list-price estimates for display, not invoices. Subscription plans are not billed per token.
 - Builds are unsigned.
-- The menu-bar percent is macOS. Linux and Windows use the tray tooltip and the floating widget.
-- GitHub Pages and the repo description/topics cannot be set from this environment when the token returns 403. The workflow is in `.github/workflows/pages.yml`.
+- The menu-bar percent is macOS. Linux and Windows use the tray tooltip, the tray popover, and the optional floating widget.
+- The docs site is published from `site/` by `.github/workflows/pages.yml`: https://cumabozkurt.github.io/claude-account-pilot/
 
 ## Türkçe özet
 
-Claude Pro/Max girişi Claude Code ile aynı OAuth istemcisini kullanır. Claude Code'un açık oturumu yenilenmez. "Claude Code'da kullan" kimlik dosyasını ve macOS anahtarlığını yazar. Claude Desktop sohbeti ayrı bir şifreli oturum tuttuğu için bu yolla değiştirilemez. Codex, OpenRouter, Gemini, DeepSeek, OpenCode Go ve Antigravity (yalnız `daily-cloudcode-pa`) gerçekten yönlendirilir. Cursor'ın kararlı bir herkese açık mesaj API'si yoktur; trafik gönderilmez. Maliyetler tahmindir. Derlemeler imzasızdır.
+Claude Pro/Max girişi Claude Code ile aynı OAuth istemcisini kullanır. Claude Code'un açık oturumu yenilenmez. "Claude Code'da kullan" kimlik dosyasını ve macOS anahtarlığını yazar. Claude Desktop sohbeti ayrı bir şifreli oturum tuttuğu için bu yolla değiştirilemez. Codex, OpenRouter, Gemini, DeepSeek, OpenCode Go ve Antigravity (yalnız `daily-cloudcode-pa`) gerçekten yönlendirilir. Cursor'ın kararlı bir herkese açık mesaj API'si yoktur; trafik gönderilmez. Maliyetler tahmindir. Derlemeler imzasızdır. Menü çubuğundaki yüzde yalnız macOS'tadır.
